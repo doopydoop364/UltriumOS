@@ -116,7 +116,7 @@ bool vmm_map_test(void) {
     uint64_t page = pmm_alloc_page();
     if (!page) return false;
     bool ok = false;
-    pt[0] = page | 3 | (1ULL << 63); /* NX for data-only mapping */
+    pt[0] = page | 3; /* writable kernel-only scratch mapping */
     invalidate(scratch_va);
     uint64_t translated = 0;
     if (vmm_translate(scratch_va + 29, &translated) &&
