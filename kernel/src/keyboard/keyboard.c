@@ -12,8 +12,15 @@ static inline uint8_t port_in(uint16_t port) {
 int keyboard_poll(void) {
     if (!(port_in(0x64) & 1)) return 0;
     uint8_t code = port_in(0x60);
-    static int left_shift, right_shift, caps_lock;
+    static int left_shift, right_shift, caps_lock, extended;
     int shift;
+    if (code == 0xe0) { extended = 1; return 0; }
+    if (extended) {
+        extended = 0;
+        if (code == 0x48) return KEY_UP;
+        if (code == 0x50) return KEY_DOWN;
+        return 0;
+    }
     if (code == 0x2a) { left_shift = 1; return 0; }
     if (code == 0x36) { right_shift = 1; return 0; }
     if (code == 0xaa) { left_shift = 0; return 0; }
