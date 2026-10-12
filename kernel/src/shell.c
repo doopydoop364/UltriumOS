@@ -29,11 +29,31 @@ static void normalize(char *line) {
 }
 static void prompt(void) { terminal_write_color("ultrium> ", TERMINAL_ACCENT); }
 static void help(void) {
-    terminal_write("Ultrium commands:\n");
-    terminal_write("Shell: help, clear, clear history, reboot\n");
-    terminal_write("Ultrium: ultrium help, ultrium version\n");
-    terminal_write("  ultrium system info, ultrium system memory\n  ultrium ai status\n");
-    terminal_write("External programs will use unprefixed names when supported.\n");
+    terminal_write("Prefixes:\n");
+    terminal_write("  ultrium     Ultrium OS commands (ultrium help)\n");
+    terminal_write("  ultrium ai  AI commands (ultrium ai help)\n");
+    terminal_write("  clear       Clear commands (clear help)\n");
+    terminal_write("General commands:\n");
+    terminal_write("  help, reboot\n");
+}
+static void clear_help(void) {
+    terminal_write("Clear commands:\n");
+    terminal_write("  clear          Clear the screen\n");
+    terminal_write("  clear history  Erase command history\n");
+}
+static void ultrium_help(void) {
+    terminal_write("Ultrium OS commands:\n");
+    terminal_write("  ultrium help\n");
+    terminal_write("  ultrium version\n");
+    terminal_write("  ultrium system info\n");
+    terminal_write("  ultrium system memory\n");
+    terminal_write("  ultrium ai help  (AI namespace)\n");
+}
+static void ai_help(void) {
+    terminal_write("Ultrium AI commands:\n");
+    terminal_write("  ultrium ai help\n");
+    terminal_write("  ultrium ai status\n");
+    terminal_write("AI services are not installed.\n");
 }
 static void version(void) { terminal_write("Ultrium OS 0.0.7\n"); }
 static void system_info(void) {
@@ -60,21 +80,23 @@ static void ai_status(void) { terminal_write("AI services are not installed.\n")
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 static const struct command commands[] = {
-    {"help", help}, {"version", version},
+    {"help", ultrium_help}, {"version", version},
     {"system info", system_info}, {"system memory", memory_info},
-    {"ai status", ai_status},
+    {"ai help", ai_help}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
     if (!*line) return;
     if (same(line, "help")) { help(); return; }
     if (same(line, "clear")) { clear(); return; }
+    if (same(line, "clear help")) { clear_help(); return; }
     if (same(line, "clear history")) { clear_history(); return; }
     if (same(line, "reboot")) {
         terminal_write("Rebooting...\n");
         system_reboot();
         return;
     }
-    if (same(line, "ultrium")) { help(); return; }
+    if (same(line, "ultrium")) { ultrium_help(); return; }
+    if (same(line, "ultrium ai")) { ai_help(); return; }
     const char *prefix = "ultrium ";
     const char *p = line;
     while (*prefix && *p == *prefix) { ++prefix; ++p; }
