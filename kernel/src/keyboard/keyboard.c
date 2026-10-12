@@ -12,9 +12,14 @@ static inline uint8_t port_in(uint16_t port) {
 int keyboard_poll(void) {
     if (!(port_in(0x64) & 1)) return 0;
     uint8_t code = port_in(0x60);
-    static int shift;
-    if (code == 0x2a || code == 0x36) { shift = 1; return 0; }
-    if (code == 0xaa || code == 0xb6) { shift = 0; return 0; }
+    static int left_shift, right_shift, caps_lock;
+    int shift;
+    if (code == 0x2a) { left_shift = 1; return 0; }
+    if (code == 0x36) { right_shift = 1; return 0; }
+    if (code == 0xaa) { left_shift = 0; return 0; }
+    if (code == 0xb6) { right_shift = 0; return 0; }
+    if (code == 0x3a) { caps_lock = !caps_lock; return 0; }
+    shift = left_shift || right_shift;
     if (code & 0x80 || code == 0xe0 || code == 0xe1) return 0;
     if (code == 0x1c) return '\n';
     if (code == 0x0e) return '\b';
@@ -40,7 +45,7 @@ int keyboard_poll(void) {
     };
     if (code >= sizeof plain) return 0;
     char c = plain[code];
-    if (shift && c >= 'a' && c <= 'z') c -= 'a' - 'A';
+    if ((shift ^ caps_lock) && c >= 'a' && c <= 'z') c -= 'a' - 'A';
     else if (shift && shifted[code]) c = shifted[code];
     return c;
 }
