@@ -55,9 +55,9 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.0.7\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.0.8\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.0.7\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.0.8\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
