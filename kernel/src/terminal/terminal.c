@@ -64,9 +64,9 @@ static void scroll_if_needed(void) {
 void terminal_init(struct limine_framebuffer *fb) {
     screen = fb;
     background = fb_pixel(fb, 0, 0, 0);
-    ink = fb_pixel(fb, 215, 215, 215);
-    accent = fb_pixel(fb, 105, 230, 192);
-    muted = fb_pixel(fb, 136, 136, 136);
+    ink = fb_pixel(fb, 243, 241, 236); // PULSE warm white #F3F1EC
+    accent = fb_pixel(fb, 255, 90, 54); // PULSE signal red #FF5A36
+    muted = fb_pixel(fb, 138, 143, 152); // PULSE muted gray #8A8F98
     terminal_clear();
 }
 
