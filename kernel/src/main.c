@@ -54,12 +54,8 @@ void kmain(void) {
     if (fb->memory_model != LIMINE_FRAMEBUFFER_RGB || fb->bpp != 32) hcf();
 
     terminal_init(fb);
-    terminal_write_color(" U   U  L      TTTTT  RRRR   IIIII  U   U  M   M\\n", TERMINAL_ACCENT);
-    terminal_write_color(" U   U  L        T    R   R    I    U   U  MM MM\\n", TERMINAL_ACCENT);
-    terminal_write_color(" U   U  L        T    RRRR     I    U   U  M M M\\n", TERMINAL_ACCENT);
-    terminal_write_color(" U   U  L        T    R R      I    U   U  M   M\\n", TERMINAL_ACCENT);
-    terminal_write_color("  UUU   LLLLL    T    R  RR  IIIII   UUU   M   M\\n", TERMINAL_ACCENT);
-    terminal_write(" ULTRIUM OS 0.0.5\n");
+    terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
+    terminal_write(" OS  0.0.5\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
