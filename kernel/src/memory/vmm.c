@@ -132,3 +132,77 @@ bool vmm_map_test(void) {
     if (!pmm_free_page(page)) ok = false;
     return ok && pmm_free_pages() == before;
 }
+
+/* Managed pages occupy scratch PT slots 1..32; slot 0 remains reserved
+   for the earlier temporary mapping test. Single-core only. */
+#define MANAGED_SLOTS 32
+static uint64_t managed_physical[MANAGED_SLOTS];
+static uint64_t managed_live_count;
+void *vmm_managed_alloc(void) {
+    if (!scratch_ready) return (void *)0;
+    uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
+    if (!pt) return (void *)0;
+    for (unsigned i = 0; i < MANAGED_SLOTS; ++i) {
+        if (managed_physical[i] || pt[i + 1] != 0) continue;
+        uint64_t physical = pmm_alloc_page();
+        if (!physical) return (void *)0;
+        uint64_t virtual_address = scratch_va + (uint64_t)(i + 1) * 4096;
+        pt[i + 1] = physical | 3;
+        invalidate(virtual_address);
+        managed_physical[i] = physical;
+        ++managed_live_count;
+        uint8_t *data = (uint8_t *)(uintptr_t)virtual_address;
+        for (size_t byte = 0; byte < 4096; ++byte) data[byte] = 0;
+        return data;
+    }
+    return (void *)0;
+}
+bool vmm_managed_free(void *address) {
+    if (!scratch_ready || !address) return false;
+    uint64_t va = (uint64_t)(uintptr_t)address;
+    if (va <= scratch_va || va >= scratch_va + 33ULL * 4096 ||
+        ((va - scratch_va) & 4095)) return false;
+    unsigned slot = (unsigned)((va - scratch_va) / 4096 - 1);
+    uint64_t physical = managed_physical[slot];
+    if (!physical) return false;
+    uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
+    if (!pt || pt[slot + 1] != (physical | 3)) return false;
+    /* Drop the alias and invalidate before returning the frame to the PMM. */
+    pt[slot + 1] = 0;
+    invalidate(va);
+    if (!pmm_free_page(physical)) return false;
+    managed_physical[slot] = 0;
+    --managed_live_count;
+    return true;
+}
+uint64_t vmm_managed_live(void) { return managed_live_count; }
+bool vmm_managed_test(void) {
+    if (!scratch_ready || managed_live_count) return false;
+    uint64_t before = pmm_free_pages();
+    void *pages[8] = {0};
+    bool ok = true;
+    for (unsigned i = 0; i < 8; ++i) {
+        pages[i] = vmm_managed_alloc();
+        if (!pages[i]) { ok = false; break; }
+        uint8_t *bytes = (uint8_t *)pages[i];
+        if (bytes[0] != 0 || bytes[4095] != 0) ok = false;
+        bytes[0] = (uint8_t)(0x30 + i);
+        bytes[4095] = (uint8_t)(0x80 + i);
+    }
+    for (unsigned i = 0; i < 8; ++i) {
+        if (!pages[i]) continue;
+        uint8_t *bytes = (uint8_t *)pages[i];
+        uint64_t physical;
+        if (bytes[0] != (uint8_t)(0x30 + i) ||
+            bytes[4095] != (uint8_t)(0x80 + i) ||
+            !vmm_translate((uint64_t)(uintptr_t)pages[i], &physical) ||
+            physical != managed_physical[i]) ok = false;
+    }
+    for (unsigned i = 0; i < 8; ++i)
+        if (pages[i] && !vmm_managed_free(pages[i])) ok = false;
+    if (managed_live_count != 0 || pmm_free_pages() != before) ok = false;
+    uint64_t ignored;
+    for (unsigned i = 0; i < 8; ++i)
+        if (pages[i] && vmm_translate((uint64_t)(uintptr_t)pages[i], &ignored)) ok = false;
+    return ok;
+}
