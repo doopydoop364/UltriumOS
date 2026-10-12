@@ -143,3 +143,11 @@ void terminal_write_color(const char *s, enum terminal_color color) {
     while (*s) terminal_putc_color(*s++, color);
 }
 void terminal_write(const char *s) { terminal_write_color(s, TERMINAL_NORMAL); }
+
+void terminal_backspace(void) {
+    if (!screen || cursor_x <= MARGIN) return;
+    cursor_x -= ADVANCE;
+    for (uint64_t y = cursor_y; y < cursor_y + 7 * SCALE && y < screen->height; ++y)
+        for (uint64_t x = cursor_x; x < cursor_x + ADVANCE && x < screen->width; ++x)
+            put_pixel(screen, x, y, background);
+}
