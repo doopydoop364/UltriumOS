@@ -3,6 +3,7 @@
 #include "keyboard/keyboard.h"
 #include "terminal/terminal.h"
 #include "system/reboot.h"
+#include "memory/pmm.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -30,19 +31,35 @@ static void help(void) {
     terminal_write("Ultrium commands:\n");
     terminal_write("Shell: help, clear, clear history, reboot\n");
     terminal_write("Ultrium: ultrium help, ultrium version\n");
-    terminal_write("  ultrium system info\n  ultrium ai status\n");
+    terminal_write("  ultrium system info, ultrium system memory\n  ultrium ai status\n");
     terminal_write("External programs will use unprefixed names when supported.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.0.5\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.0.6\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.0.5\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.0.6\nArchitecture: x86_64\nMode: CLI\n");
+}
+static void print_uint(uint64_t value) {
+    char digits[21];
+    size_t n = 0;
+    do { digits[n++] = (char)('0' + value % 10); value /= 10; } while (value);
+    while (n) terminal_putc_color(digits[--n], TERMINAL_NORMAL);
+}
+static void memory_info(void) {
+    terminal_write("Usable RAM: ");
+    print_uint(pmm_total_bytes() / (1024 * 1024));
+    terminal_write(" MiB\nFree pages: ");
+    print_uint(pmm_free_pages());
+    terminal_write("\nAllocated pages: ");
+    print_uint(pmm_used_pages());
+    terminal_write("\nPage size: 4096 bytes\n");
 }
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 static const struct command commands[] = {
     {"help", help}, {"version", version},
-    {"system info", system_info}, {"ai status", ai_status},
+    {"system info", system_info}, {"system memory", memory_info},
+    {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
     if (!*line) return;

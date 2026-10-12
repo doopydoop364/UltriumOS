@@ -21,6 +21,15 @@ static volatile struct limine_framebuffer_request framebuffer_request = {
     .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_memmap_request memmap_request = {
+    .id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID, .revision = 0
+};
+
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
 
@@ -45,6 +54,7 @@ static void hcf(void) {
 
 #include "terminal/terminal.h"
 #include "shell.h"
+#include "memory/pmm.h"
 
 void kmain(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) hcf();
@@ -55,11 +65,18 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.0.5\n");
+    terminal_write(" OS  0.0.6\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
     terminal_write_color("CLI MODE\n", TERMINAL_ACCENT);
+    if (!memmap_request.response || !hhdm_request.response ||
+        !pmm_init(memmap_request.response, hhdm_request.response->offset)) {
+        terminal_write_color("PHYSICAL MEMORY INIT FAILED\n", TERMINAL_MUTED);
+        hcf();
+    }
+    terminal_write("PHYSICAL MEMORY READY\n");
+    terminal_write(pmm_self_test() ? "MEMORY SELF TEST PASSED\n" : "MEMORY SELF TEST FAILED\n");
     terminal_write("INTERACTIVE SHELL READY\n\n");
     shell_run();
     hcf();
