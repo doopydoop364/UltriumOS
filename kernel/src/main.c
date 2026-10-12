@@ -67,7 +67,7 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.0.7\n");
+    terminal_write(" OS  0.0.8\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
@@ -84,7 +84,7 @@ void kmain(void) {
         terminal_write_color("KERNEL HEAP INIT FAILED\n", TERMINAL_MUTED);
         hcf();
     }
-    terminal_write(heap_self_test() ? "KERNEL HEAP SELF TEST PASSED\n" : "KERNEL HEAP SELF TEST FAILED\n");
+    terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
     terminal_write("INTERACTIVE SHELL READY\n\n");
     shell_run();
     hcf();

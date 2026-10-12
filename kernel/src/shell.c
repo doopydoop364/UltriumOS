@@ -47,6 +47,7 @@ static void ultrium_help(void) {
     terminal_write("  ultrium version\n");
     terminal_write("  ultrium system info\n");
     terminal_write("  ultrium system memory\n");
+    terminal_write("  ultrium system memory test\n");
     terminal_write("  ultrium ai help  (AI namespace)\n");
 }
 static void ai_help(void) {
@@ -55,9 +56,9 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.0.7\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.0.8\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.0.7\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.0.8\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -76,12 +77,44 @@ static void memory_info(void) {
     print_uint(heap_live_allocations());
     terminal_write("\nPage size: 4096 bytes\n");
 }
+/* Explicit QEMU stress test: independent writes, reuse, and page accounting. */
+static void memory_test(void) {
+    enum { COUNT = 128 };
+    void *blocks[COUNT] = {0};
+    uint64_t initial_free = pmm_free_pages();
+    uint64_t initial_live = heap_live_allocations();
+    size_t allocated = 0;
+    bool ok = true;
+    for (size_t i = 0; i < COUNT; ++i) {
+        blocks[i] = kmalloc(32);
+        if (!blocks[i]) { ok = false; break; }
+        ++allocated;
+        for (size_t j = 0; j < 32; ++j)
+            ((unsigned char *)blocks[i])[j] = (unsigned char)(i ^ j ^ 0x5a);
+    }
+    if (ok && pmm_free_pages() + 1 != initial_free) ok = false;
+    for (size_t i = 0; i < allocated; ++i)
+        for (size_t j = 0; j < 32; ++j)
+            if (((unsigned char *)blocks[i])[j] != (unsigned char)(i ^ j ^ 0x5a))
+                ok = false;
+    for (size_t i = 0; i < allocated; ++i) kfree(blocks[i]);
+    if (pmm_free_pages() != initial_free ||
+        heap_live_allocations() != initial_live) ok = false;
+    void *again = kmalloc(32);
+    if (!again) ok = false;
+    kfree(again);
+    if (pmm_free_pages() != initial_free ||
+        heap_live_allocations() != initial_live) ok = false;
+    terminal_write(ok ? "SLAB STRESS TEST PASSED (128 x 32 bytes)\n"
+                      : "SLAB STRESS TEST FAILED\n");
+}
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 static const struct command commands[] = {
     {"help", ultrium_help}, {"version", version},
     {"system info", system_info}, {"system memory", memory_info},
+    {"system memory test", memory_test},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
