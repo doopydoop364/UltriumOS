@@ -28,7 +28,7 @@ static void normalize(char *line) {
 static void prompt(void) { terminal_write_color("ultrium> ", TERMINAL_ACCENT); }
 static void help(void) {
     terminal_write("Ultrium commands:\n");
-    terminal_write("Shell: help, clear, reboot\n");
+    terminal_write("Shell: help, clear, clear history, reboot\n");
     terminal_write("Ultrium: ultrium help, ultrium version\n");
     terminal_write("  ultrium system info\n  ultrium ai status\n");
     terminal_write("External programs will use unprefixed names when supported.\n");
@@ -39,6 +39,7 @@ static void system_info(void) {
 }
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
+static void clear_history(void);
 static const struct command commands[] = {
     {"help", help}, {"version", version},
     {"system info", system_info}, {"ai status", ai_status},
@@ -47,6 +48,7 @@ static void dispatch(const char *line) {
     if (!*line) return;
     if (same(line, "help")) { help(); return; }
     if (same(line, "clear")) { clear(); return; }
+    if (same(line, "clear history")) { clear_history(); return; }
     if (same(line, "reboot")) {
         terminal_write("Rebooting...\n");
         system_reboot();
@@ -65,12 +67,16 @@ static void dispatch(const char *line) {
         terminal_write("For built-in commands, use: ultrium help\n");
     }
 }
-/* Small fixed history; avoids heap allocation in the prototype kernel.
+/* Expanded preallocated history pending a real memory allocator and filesystem.
    Limit command length to 70 so input stays on one line at common QEMU sizes. */
 #define INPUT_LIMIT 70
-#define HISTORY_COUNT 8
+#define HISTORY_COUNT 4096
 static char history[HISTORY_COUNT][INPUT_LIMIT + 1];
 static size_t history_size;
+static void clear_history(void) {
+    history_size = 0;
+    terminal_write("Command history cleared.\n");
+}
 
 static void copy_line(char *dest, const char *src) {
     size_t i = 0;
@@ -132,7 +138,7 @@ void shell_run(void) {
             line[len] = '\0';
             terminal_newline();
             normalize(line);
-            save_history(line);
+            if (!same(line, "clear history")) save_history(line);
             dispatch(line);
             len = 0;
             line[0] = '\0';
