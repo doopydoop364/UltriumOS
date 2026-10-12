@@ -7,6 +7,7 @@
 #include "memory/vmm.h"
 #include "system/exceptions.h"
 #include "memory/heap.h"
+#include "tests/tests.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -49,6 +50,7 @@ static void ultrium_help(void) {
     terminal_write("  ultrium help\n");
     terminal_write("  ultrium version\n");
     terminal_write("  ultrium system help  (System namespace)\n");
+    terminal_write("  ultrium test help  (Kernel tests)\n");
     terminal_write("  ultrium ai help  (AI namespace)\n");
 }
 static void system_help(void) {
@@ -83,6 +85,12 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
+static void test_help(void) {
+    terminal_write("Kernel test commands:\n");
+    terminal_write("  ultrium test help\n");
+    terminal_write("  ultrium test memory\n");
+    terminal_write("  ultrium test all\n");
+}
 static void version(void) { terminal_write("Ultrium OS 0.1.2\n"); }
 static void system_info(void) {
     terminal_write("OS: Ultrium OS\nKernel: 0.1.2\nArchitecture: x86_64\nMode: CLI\n");
@@ -104,37 +112,7 @@ static void memory_info(void) {
     print_uint(heap_live_allocations());
     terminal_write("\nPage size: 4096 bytes\n");
 }
-/* Explicit QEMU stress test: independent writes, reuse, and page accounting. */
-static void memory_test(void) {
-    enum { COUNT = 128 };
-    void *blocks[COUNT] = {0};
-    uint64_t initial_free = pmm_free_pages();
-    uint64_t initial_live = heap_live_allocations();
-    size_t allocated = 0;
-    bool ok = true;
-    for (size_t i = 0; i < COUNT; ++i) {
-        blocks[i] = kmalloc(32);
-        if (!blocks[i]) { ok = false; break; }
-        ++allocated;
-        for (size_t j = 0; j < 32; ++j)
-            ((unsigned char *)blocks[i])[j] = (unsigned char)(i ^ j ^ 0x5a);
-    }
-    if (ok && pmm_free_pages() + 1 != initial_free) ok = false;
-    for (size_t i = 0; i < allocated; ++i)
-        for (size_t j = 0; j < 32; ++j)
-            if (((unsigned char *)blocks[i])[j] != (unsigned char)(i ^ j ^ 0x5a))
-                ok = false;
-    for (size_t i = 0; i < allocated; ++i) kfree(blocks[i]);
-    if (pmm_free_pages() != initial_free ||
-        heap_live_allocations() != initial_live) ok = false;
-    void *again = kmalloc(32);
-    if (!again) ok = false;
-    kfree(again);
-    if (pmm_free_pages() != initial_free ||
-        heap_live_allocations() != initial_live) ok = false;
-    terminal_write(ok ? "SLAB STRESS TEST PASSED (128 x 32 bytes)\n"
-                      : "SLAB STRESS TEST FAILED\n");
-}
+static void memory_test(void) { kernel_test_slab_stress(); }
 static void memory_map_test(void) {
     terminal_write(vmm_self_test() ? "PAGE TABLE TEST PASSED\n"
                                    : "PAGE TABLE TEST FAILED\n");
@@ -168,6 +146,8 @@ static const struct command commands[] = {
     {"system memory mapping test", mapping_test},
     {"system memory mapping managed test", managed_test},
     {"system exceptions", exception_status},
+    {"test help", test_help}, {"test memory", kernel_tests_memory},
+    {"test all", kernel_tests_all},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
