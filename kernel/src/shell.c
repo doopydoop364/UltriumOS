@@ -88,7 +88,8 @@ static void dispatch(const char *line) {
         system_reboot();
         return;
     }
-    if (same(line, "ultrium")) { ultrium_help(); return; }\n    if (same(line, "ultrium ai")) { ai_help(); return; }
+    if (same(line, "ultrium")) { ultrium_help(); return; }
+    if (same(line, "ultrium ai")) { ai_help(); return; }
     const char *prefix = "ultrium ";
     const char *p = line;
     while (*prefix && *p == *prefix) { ++prefix; ++p; }
