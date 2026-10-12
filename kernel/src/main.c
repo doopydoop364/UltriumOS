@@ -68,7 +68,7 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.1.0\n");
+    terminal_write(" OS  0.1.1\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
@@ -83,6 +83,7 @@ void kmain(void) {
     vmm_init(hhdm_request.response->offset);
     terminal_write("PHYSICAL MEMORY READY\n");
     terminal_write(vmm_self_test() ? "PAGE TABLE SELF TEST PASSED\n" : "PAGE TABLE SELF TEST FAILED\n");
+    terminal_write(vmm_mapping_init() ? "SCRATCH VIRTUAL MAPPING READY\n" : "SCRATCH VIRTUAL MAPPING UNAVAILABLE\n");
     terminal_write(pmm_self_test() ? "MEMORY SELF TEST PASSED\n" : "MEMORY SELF TEST FAILED\n");
     if (!heap_init()) {
         terminal_write_color("KERNEL HEAP INIT FAILED\n", TERMINAL_MUTED);
