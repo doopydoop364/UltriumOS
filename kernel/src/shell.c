@@ -8,6 +8,20 @@ static int same(const char *a, const char *b) {
     return *a == *b;
 }
 static void prompt(void) { terminal_write_color("ULTRIUM> ", TERMINAL_ACCENT); }
+// Normalize case and repeated spaces so command comparisons are reliable.
+static void normalize(char *line) {
+    size_t read = 0, write = 0;
+    while (line[read] == ' ') ++read;
+    int pending_space = 0;
+    for (; line[read]; ++read) {
+        char ch = line[read];
+        if (ch == ' ') { pending_space = write > 0; continue; }
+        if (pending_space) { line[write++] = ' '; pending_space = 0; }
+        if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + ('a' - 'A'));
+        line[write++] = ch;
+    }
+    line[write] = 0;
+}
 static void execute(const char *cmd) {
     if (!*cmd) return;
     if (same(cmd, "help")) {
@@ -15,7 +29,7 @@ static void execute(const char *cmd) {
     } else if (same(cmd, "clear")) {
         terminal_clear();
     } else if (same(cmd, "ultrium version")) {
-        terminal_write("Ultrium OS 0.0.3\n");
+        terminal_write("Ultrium OS 0.0.4\n");
     } else if (same(cmd, "ultrium system info")) {
         terminal_write("OS: Ultrium OS\nARCH: x86_64\nINTERFACE: CLI\n");
     } else if (same(cmd, "ultrium ai status")) {
@@ -40,6 +54,7 @@ void shell_run(void) {
         } else if (key == '\n') {
             line[len] = 0;
             terminal_newline();
+            normalize(line);
             execute(line);
             len = 0;
             prompt();
