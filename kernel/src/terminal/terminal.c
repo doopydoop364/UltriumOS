@@ -118,3 +118,21 @@ void terminal_cursor(int visible) {
         for (uint64_t x = cursor_x; x < cursor_x + ADVANCE && x < screen->width; ++x)
             put_pixel(screen, x, y, color);
 }
+
+/* Single-line editor at the current prompt. Call with cursor at input end;
+   redraw by erasing glyph cells instead of painting over existing ink. */
+void terminal_input_redraw(const char *line, unsigned length, unsigned caret) {
+    if (!screen || length > 70 || caret > length) return;
+    uint64_t end = cursor_x;
+    uint64_t begin = end >= (uint64_t)length * ADVANCE + MARGIN ?
+        end - (uint64_t)length * ADVANCE : MARGIN;
+    /* Editor redraw assumes the command stays on one framebuffer row. */
+    for (unsigned i = 0; i <= 70; ++i) {
+        uint64_t x = begin + (uint64_t)i * ADVANCE;
+        if (x + ADVANCE + MARGIN > screen->width) break;
+        for (uint64_t y = cursor_y; y < cursor_y + GLYPH_HEIGHT && y < screen->height; ++y)
+            for (uint64_t px = x; px < x + ADVANCE; ++px) put_pixel(screen, px, y, background);
+        if (i < length) draw_character(screen, line[i], x, cursor_y, ink);
+    }
+    cursor_x = begin + (uint64_t)caret * ADVANCE;
+}
