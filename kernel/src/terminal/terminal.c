@@ -183,3 +183,11 @@ void terminal_backspace(void) {
         for (uint64_t x = cursor_x; x < cursor_x + ADVANCE && x < screen->width; ++x)
             put_pixel(screen, x, y, background);
 }
+
+void terminal_cursor(int visible) {
+    if (!screen) return;
+    uint32_t color = visible ? accent : background;
+    for (uint64_t y = cursor_y + 7 * SCALE; y < cursor_y + 8 * SCALE && y < screen->height; ++y)
+        for (uint64_t x = cursor_x; x < cursor_x + 5 * SCALE && x < screen->width; ++x)
+            put_pixel(screen, x, y, color);
+}
