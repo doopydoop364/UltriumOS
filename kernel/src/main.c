@@ -55,7 +55,8 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.0.5\n\n");
+    terminal_write(" OS  0.0.5\n");
+    terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
     terminal_write_color("CLI MODE\n", TERMINAL_ACCENT);
