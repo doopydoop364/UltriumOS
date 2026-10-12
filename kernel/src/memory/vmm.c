@@ -106,16 +106,17 @@ bool vmm_mapping_init(void) {
     return true;
 }
 bool vmm_map_test(void) {
-    if (!scratch_ready) return false;
+    test_error = 0;
+    if (!scratch_ready) { test_error = 1; return false; }
     uint64_t cr3;
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
     uint64_t *root = (uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
     uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
     if (!root || !pt || root[scratch_slot] != (scratch_pdpt | 3) ||
-        pt[0] != 0) return false;
+        pt[0] != 0) { test_error = 2; return false; }
     uint64_t before = pmm_free_pages();
     uint64_t page = pmm_alloc_page();
-    if (!page) return false;
+    if (!page) { test_error = 3; return false; }
     bool ok = false;
     pt[0] = page | 3; /* writable kernel-only scratch mapping */
     invalidate(scratch_va);
@@ -127,11 +128,13 @@ bool vmm_map_test(void) {
         alias[29] = 0x6b;
         ok = direct[29] == 0x6b;
     }
+    if (!ok) test_error = 4;
     pt[0] = 0;
     invalidate(scratch_va);
-    if (vmm_translate(scratch_va, &translated)) ok = false;
-    if (!pmm_free_page(page)) ok = false;
-    return ok && pmm_free_pages() == before;
+    if (vmm_translate(scratch_va, &translated)) { test_error = 5; ok = false; }
+    if (!pmm_free_page(page)) { test_error = 6; ok = false; }
+    if (pmm_free_pages() != before) { test_error = 7; ok = false; }
+    return ok;
 }
 
 /* Managed pages occupy scratch PT slots 1..32; slot 0 remains reserved
@@ -139,6 +142,8 @@ bool vmm_map_test(void) {
 #define MANAGED_SLOTS 32
 static uint64_t managed_physical[MANAGED_SLOTS];
 static uint64_t managed_live_count;
+static unsigned test_error;
+unsigned vmm_test_error(void) { return test_error; }
 void *vmm_managed_alloc(void) {
     if (!scratch_ready) return (void *)0;
     uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
@@ -178,15 +183,16 @@ bool vmm_managed_free(void *address) {
 }
 uint64_t vmm_managed_live(void) { return managed_live_count; }
 bool vmm_managed_test(void) {
-    if (!scratch_ready || managed_live_count) return false;
+    test_error = 0;
+    if (!scratch_ready || managed_live_count) { test_error = 11; return false; }
     uint64_t before = pmm_free_pages();
     void *pages[8] = {0};
     bool ok = true;
     for (unsigned i = 0; i < 8; ++i) {
         pages[i] = vmm_managed_alloc();
-        if (!pages[i]) { ok = false; break; }
+        if (!pages[i]) { test_error = 12; ok = false; break; }
         uint8_t *bytes = (uint8_t *)pages[i];
-        if (bytes[0] != 0 || bytes[4095] != 0) ok = false;
+        if (bytes[0] != 0 || bytes[4095] != 0) { test_error = 13; ok = false; }
         bytes[0] = (uint8_t)(0x30 + i);
         bytes[4095] = (uint8_t)(0x80 + i);
     }
@@ -197,13 +203,13 @@ bool vmm_managed_test(void) {
         if (bytes[0] != (uint8_t)(0x30 + i) ||
             bytes[4095] != (uint8_t)(0x80 + i) ||
             !vmm_translate((uint64_t)(uintptr_t)pages[i], &physical) ||
-            physical != managed_physical[i]) ok = false;
+            physical != managed_physical[i]) { test_error = 14; ok = false; }
     }
     for (unsigned i = 0; i < 8; ++i)
-        if (pages[i] && !vmm_managed_free(pages[i])) ok = false;
-    if (managed_live_count != 0 || pmm_free_pages() != before) ok = false;
+        if (pages[i] && !vmm_managed_free(pages[i])) { test_error = 15; ok = false; }
+    if (managed_live_count != 0 || pmm_free_pages() != before) { test_error = 16; ok = false; }
     uint64_t ignored;
     for (unsigned i = 0; i < 8; ++i)
-        if (pages[i] && vmm_translate((uint64_t)(uintptr_t)pages[i], &ignored)) ok = false;
+        if (pages[i] && vmm_translate((uint64_t)(uintptr_t)pages[i], &ignored)) { test_error = 17; ok = false; }
     return ok;
 }
