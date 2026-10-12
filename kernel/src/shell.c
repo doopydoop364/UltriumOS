@@ -32,8 +32,14 @@ static void help(void) {
     terminal_write("Prefixes:\n");
     terminal_write("  ultrium     Ultrium OS commands (ultrium help)\n");
     terminal_write("  ultrium ai  AI commands (ultrium ai help)\n");
+    terminal_write("  clear       Clear commands (clear help)\n");
     terminal_write("General commands:\n");
-    terminal_write("  help, clear, clear history, reboot\n");
+    terminal_write("  help, reboot\n");
+}
+static void clear_help(void) {
+    terminal_write("Clear commands:\n");
+    terminal_write("  clear          Clear the screen\n");
+    terminal_write("  clear history  Erase command history\n");
 }
 static void ultrium_help(void) {
     terminal_write("Ultrium OS commands:\n");
@@ -82,6 +88,7 @@ static void dispatch(const char *line) {
     if (!*line) return;
     if (same(line, "help")) { help(); return; }
     if (same(line, "clear")) { clear(); return; }
+    if (same(line, "clear help")) { clear_help(); return; }
     if (same(line, "clear history")) { clear_history(); return; }
     if (same(line, "reboot")) {
         terminal_write("Rebooting...\n");
