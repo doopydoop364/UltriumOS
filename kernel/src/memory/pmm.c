@@ -39,10 +39,16 @@ bool pmm_init(struct limine_memmap_response *map, uint64_t hhdm_offset) {
         uint64_t end = (e->base + e->length) & ~(PAGE_SIZE - 1);
         if (end <= start) continue;
         if (range_count >= MAX_RANGES) return false;
+        /* Limine's map should be disjoint. Reject ambiguous ownership rather
+           than counting or issuing a frame twice if that invariant is broken. */
+        for (size_t r = 0; r < range_count; ++r)
+            if (start < ranges[r].end && ranges[r].begin < end) return false;
+        uint64_t pages = (end - start) / PAGE_SIZE;
+        if (all_pages > UINT64_MAX - pages) return false;
         ranges[range_count].begin = start;
         ranges[range_count].end = end;
         ++range_count;
-        all_pages += (end - start) / PAGE_SIZE;
+        all_pages += pages;
     }
     if (!range_count || !all_pages) return false;
     available = all_pages;
@@ -80,8 +86,17 @@ bool pmm_free_page(uint64_t physical) {
     }
     if (!issued) return false;
     /* Prototype safety guard: detect double frees in the released-page stack. */
-    for (uint64_t p = released_head; p; p = *(uint64_t *)(uintptr_t)(hhdm + p))
+    /* Bound traversal and validate every intrusive link before dereferencing
+       it. This makes malformed list state fail closed instead of looping or
+       reading through an arbitrary physical address. */
+    uint64_t p = released_head;
+    uint64_t traversed = 0;
+    while (p) {
+        if (!valid_page(p) || ++traversed > all_pages) return false;
         if (p == physical) return false;
+        p = *(uint64_t *)(uintptr_t)(hhdm + p);
+    }
+    if (available >= all_pages) return false;
     *(uint64_t *)(uintptr_t)(hhdm + physical) = released_head;
     released_head = physical;
     ++available;
@@ -93,9 +108,14 @@ uint64_t pmm_used_pages(void) { return all_pages - available; }
 bool pmm_self_test(void) {
     uint64_t before = available;
     uint64_t a = pmm_alloc_page(), b = pmm_alloc_page();
-    if (!a || !b || a == b) return false;
-    if (!pmm_free_page(a) || pmm_free_page(a)) return false;
-    uint64_t c = pmm_alloc_page();
-    bool ok = c == a && pmm_free_page(b) && pmm_free_page(c) && available == before;
-    return ok;
+    uint64_t c = 0;
+    bool ok = a && b && a != b;
+    if (ok) ok = pmm_free_page(a) && !pmm_free_page(a);
+    if (ok) {
+        c = pmm_alloc_page();
+        ok = c == a;
+    }
+    if (b && !pmm_free_page(b)) ok = false;
+    if (c && !pmm_free_page(c)) ok = false;
+    return ok && available == before;
 }
