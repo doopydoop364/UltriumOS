@@ -218,14 +218,11 @@ static size_t line_length(const char *line) {
     return i;
 }
 
-static void replace_input(char *line, size_t *len, const char *text) {
-    while (*len) {
-        terminal_backspace();
-        --*len;
-    }
+static void replace_input(char *line, size_t *len, size_t *caret, const char *text) {
     copy_line(line, text);
     *len = line_length(line);
-    terminal_write(line);
+    *caret = *len;
+    terminal_input_redraw(line, (unsigned)*len, (unsigned)*caret);
 }
 
 static void save_history(const char *line) {
@@ -241,64 +238,84 @@ static void save_history(const char *line) {
 
 void shell_run(void) {
     char line[INPUT_LIMIT + 1] = {0};
-    size_t len = 0;
-    size_t selected = 0;
+    size_t len = 0, caret = 0, selected = 0;
     prompt();
+    terminal_input_begin();
     terminal_cursor(1);
     for (;;) {
         int key = keyboard_poll();
         if (!key) continue;
         terminal_cursor(0);
         if (key == KEY_CTRL_C) {
-            terminal_write("^C\n");
-            len = 0;
-            line[0] = '\0';
+            terminal_input_redraw(line, (unsigned)len, (unsigned)len);
+            terminal_write("^C");
+            terminal_newline();
+            len = caret = 0;
+            line[0] = 0;
             selected = history_size;
             prompt();
-        } else if (key == KEY_CTRL_U) {
-            replace_input(line, &len, "");
-            selected = history_size;
-        } else if (key == KEY_CTRL_W) {
-            while (len && line[len - 1] == ' ') {
-                line[--len] = '\0'; terminal_backspace();
-            }
-            while (len && line[len - 1] != ' ') {
-                line[--len] = '\0'; terminal_backspace();
-            }
-            selected = history_size;
+            terminal_input_begin();
         } else if (key == KEY_CTRL_L) {
             terminal_clear();
             prompt();
-            terminal_write(line);
+            terminal_input_begin();
+            terminal_input_redraw(line, (unsigned)len, (unsigned)caret);
+        } else if (key == KEY_LEFT) {
+            if (caret) --caret;
+        } else if (key == KEY_RIGHT) {
+            if (caret < len) ++caret;
+        } else if (key == KEY_HOME) {
+            caret = 0;
+        } else if (key == KEY_END) {
+            caret = len;
         } else if (key == KEY_UP) {
-            if (selected > 0) {
-                --selected;
-                replace_input(line, &len, history[selected]);
-            }
+            if (selected > 0) replace_input(line, &len, &caret, history[--selected]);
         } else if (key == KEY_DOWN) {
             if (selected < history_size) {
                 ++selected;
-                replace_input(line, &len,
+                replace_input(line, &len, &caret,
                     selected == history_size ? "" : history[selected]);
             }
-        } else if (key == '\b') {
-            if (len) { line[--len] = '\0'; terminal_backspace(); }
+        } else if (key == KEY_CTRL_U) {
+            replace_input(line, &len, &caret, "");
+            selected = history_size;
+        } else if (key == KEY_CTRL_W) {
+            size_t start = caret;
+            while (start && line[start - 1] == ' ') --start;
+            while (start && line[start - 1] != ' ') --start;
+            if (start != caret) {
+                size_t removed = caret - start;
+                for (size_t i = start; i + removed <= len; ++i)
+                    line[i] = line[i + removed];
+                len -= removed; caret = start;
+            }
+            selected = history_size;
+        } else if (key == KEY_DELETE || key == '\b') {
+            if (key == '\b' && caret) --caret;
+            else if (key == '\b') { /* nothing before caret */ }
+            if (caret < len && (key == KEY_DELETE || key == '\b')) {
+                for (size_t i = caret; i < len; ++i) line[i] = line[i + 1];
+                --len;
+            }
+            selected = history_size;
         } else if (key == '\n') {
-            line[len] = '\0';
+            terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_newline();
             normalize(line);
             if (!same(line, "clear history")) save_history(line);
             dispatch(line);
-            len = 0;
-            line[0] = '\0';
+            len = caret = 0;
+            line[0] = 0;
             selected = history_size;
             prompt();
+            terminal_input_begin();
         } else if (key >= 32 && key <= 126 && len < INPUT_LIMIT) {
-            line[len++] = (char)key;
-            line[len] = '\0';
-            terminal_putc_color((char)key, TERMINAL_NORMAL);
+            for (size_t i = len + 1; i > caret; --i) line[i] = line[i - 1];
+            line[caret++] = (char)key;
+            ++len;
             selected = history_size;
         }
+        terminal_input_redraw(line, (unsigned)len, (unsigned)caret);
         terminal_cursor(1);
     }
 }
