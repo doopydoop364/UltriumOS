@@ -1,0 +1,4 @@
+#ifndef ULTRIUM_VERSION_H
+#define ULTRIUM_VERSION_H
+#define ULTRIUM_VERSION "0.2.0"
+#endif

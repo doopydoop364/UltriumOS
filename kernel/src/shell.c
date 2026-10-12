@@ -8,6 +8,7 @@
 #include "system/exceptions.h"
 #include "memory/heap.h"
 #include "tests/tests.h"
+#include "version.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -91,9 +92,9 @@ static void test_help(void) {
     terminal_write("  ultrium test memory\n");
     terminal_write("  ultrium test all\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.1.2\n"); }
+static void version(void) { terminal_write("Ultrium OS " ULTRIUM_VERSION "\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.1.2\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: " ULTRIUM_VERSION "\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -102,6 +103,7 @@ static void print_uint(uint64_t value) {
     while (n) terminal_putc_color(digits[--n], TERMINAL_NORMAL);
 }
 static void memory_info(void) {
+    struct vmm_region_stats regions;
     terminal_write("Usable RAM: ");
     print_uint(pmm_total_bytes() / (1024 * 1024));
     terminal_write(" MiB\nFree pages: ");
@@ -111,6 +113,14 @@ static void memory_info(void) {
     terminal_write("\nHeap allocations: ");
     print_uint(heap_live_allocations());
     terminal_write("\nPage size: 4096 bytes\n");
+    if (vmm_region_stats_get(&regions)) {
+        terminal_write("VM region reserved pages: "); print_uint(regions.reserved_virtual_pages);
+        terminal_write("\nVM region mapped pages: "); print_uint(regions.mapped_virtual_pages);
+        terminal_write("\nVM region backing pages: "); print_uint(regions.owned_backing_pages);
+        terminal_write("\nVM region free pages: "); print_uint(regions.free_virtual_pages);
+        terminal_write("\nVM region page tables: "); print_uint(regions.page_table_frames);
+        terminal_write("\n");
+    }
 }
 static void memory_test(void) { kernel_test_slab_stress(); }
 static void memory_map_test(void) {
