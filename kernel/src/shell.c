@@ -27,7 +27,8 @@ static void normalize(char *line) {
 static void prompt(void) { terminal_write_color("ultrium> ", TERMINAL_ACCENT); }
 static void help(void) {
     terminal_write("Ultrium commands:\n");
-    terminal_write("  ultrium help\n  ultrium clear\n  ultrium version\n");
+    terminal_write("Shell: help, clear, reboot\n");
+    terminal_write("Ultrium: ultrium help, ultrium version\n");
     terminal_write("  ultrium system info\n  ultrium ai status\n");
     terminal_write("External programs will use unprefixed names when supported.\n");
 }
@@ -38,11 +39,17 @@ static void system_info(void) {
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
 static const struct command commands[] = {
-    {"help", help}, {"clear", clear}, {"version", version},
+    {"help", help}, {"version", version},
     {"system info", system_info}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
     if (!*line) return;
+    if (same(line, "help")) { help(); return; }
+    if (same(line, "clear")) { clear(); return; }
+    if (same(line, "reboot")) {
+        terminal_write_color("Reboot is not implemented yet.\n", TERMINAL_MUTED);
+        return;
+    }
     if (same(line, "ultrium")) { help(); return; }
     const char *prefix = "ultrium ";
     const char *p = line;
@@ -52,7 +59,7 @@ static void dispatch(const char *line) {
             if (same(p, commands[i].name)) { commands[i].handler(); return; }
         terminal_write_color("Unknown Ultrium command. Try: ultrium help\n", TERMINAL_MUTED);
     } else {
-        terminal_write_color("External programs are not supported yet.\n", TERMINAL_MUTED);
+        terminal_write_color("Program not found (external execution unavailable).\n", TERMINAL_MUTED);
         terminal_write("For built-in commands, use: ultrium help\n");
     }
 }
