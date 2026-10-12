@@ -105,6 +105,7 @@ bool vmm_mapping_init(void) {
     scratch_ready = true;
     return true;
 }
+static unsigned test_error;
 bool vmm_map_test(void) {
     test_error = 0;
     if (!scratch_ready) { test_error = 1; return false; }
@@ -142,7 +143,6 @@ bool vmm_map_test(void) {
 #define MANAGED_SLOTS 32
 static uint64_t managed_physical[MANAGED_SLOTS];
 static uint64_t managed_live_count;
-static unsigned test_error;
 unsigned vmm_test_error(void) { return test_error; }
 void *vmm_managed_alloc(void) {
     if (!scratch_ready) return (void *)0;
