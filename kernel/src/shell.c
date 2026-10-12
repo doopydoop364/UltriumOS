@@ -74,6 +74,7 @@ static void memory_mapping_help(void) {
     terminal_write("Virtual mapping commands:\n");
     terminal_write("  ultrium system memory mapping help\n");
     terminal_write("  ultrium system memory mapping test\n");
+    terminal_write("  ultrium system memory mapping managed test\n");
 }
 static void ai_help(void) {
     terminal_write("Ultrium AI commands:\n");
@@ -81,9 +82,9 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.1.1\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.1.2\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.1.1\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.1.2\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -146,6 +147,11 @@ static void mapping_test(void) {
     terminal_write(vmm_map_test() ?
         "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
 }
+static void managed_test(void) {
+    terminal_write(vmm_managed_test() ?
+        "MANAGED VIRTUAL PAGES TEST PASSED\n" :
+        "MANAGED VIRTUAL PAGES TEST FAILED\n");
+}
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
@@ -158,6 +164,7 @@ static const struct command commands[] = {
     {"system memory test", memory_test},
     {"system memory map test", memory_map_test},
     {"system memory mapping test", mapping_test},
+    {"system memory mapping managed test", managed_test},
     {"system exceptions", exception_status},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
