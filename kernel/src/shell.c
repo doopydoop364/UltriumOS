@@ -2,6 +2,7 @@
 #include "shell.h"
 #include "keyboard/keyboard.h"
 #include "terminal/terminal.h"
+#include "system/reboot.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -47,7 +48,8 @@ static void dispatch(const char *line) {
     if (same(line, "help")) { help(); return; }
     if (same(line, "clear")) { clear(); return; }
     if (same(line, "reboot")) {
-        terminal_write_color("Reboot is not implemented yet.\n", TERMINAL_MUTED);
+        terminal_write("Rebooting...\n");
+        system_reboot();
         return;
     }
     if (same(line, "ultrium")) { help(); return; }
@@ -63,27 +65,84 @@ static void dispatch(const char *line) {
         terminal_write("For built-in commands, use: ultrium help\n");
     }
 }
+/* Small fixed history; avoids heap allocation in the prototype kernel.
+   Limit command length to 70 so input stays on one line at common QEMU sizes. */
+#define INPUT_LIMIT 70
+#define HISTORY_COUNT 8
+static char history[HISTORY_COUNT][INPUT_LIMIT + 1];
+static size_t history_size;
+
+static void copy_line(char *dest, const char *src) {
+    size_t i = 0;
+    while (i < INPUT_LIMIT && src[i]) { dest[i] = src[i]; ++i; }
+    dest[i] = '\0';
+}
+
+static size_t line_length(const char *line) {
+    size_t i = 0;
+    while (line[i] && i < INPUT_LIMIT) ++i;
+    return i;
+}
+
+static void replace_input(char *line, size_t *len, const char *text) {
+    while (*len) {
+        terminal_backspace();
+        --*len;
+    }
+    copy_line(line, text);
+    *len = line_length(line);
+    terminal_write(line);
+}
+
+static void save_history(const char *line) {
+    if (!*line) return;
+    if (history_size && same(history[history_size - 1], line)) return;
+    if (history_size == HISTORY_COUNT) {
+        for (size_t i = 1; i < HISTORY_COUNT; ++i)
+            copy_line(history[i - 1], history[i]);
+        --history_size;
+    }
+    copy_line(history[history_size++], line);
+}
+
 void shell_run(void) {
-    char line[128] = {0};
+    char line[INPUT_LIMIT + 1] = {0};
     size_t len = 0;
+    size_t selected = 0;
     prompt();
     terminal_cursor(1);
     for (;;) {
         int key = keyboard_poll();
         if (!key) continue;
         terminal_cursor(0);
-        if (key == '\b') {
-            if (len) { line[--len] = 0; terminal_backspace(); }
+        if (key == KEY_UP) {
+            if (selected > 0) {
+                --selected;
+                replace_input(line, &len, history[selected]);
+            }
+        } else if (key == KEY_DOWN) {
+            if (selected < history_size) {
+                ++selected;
+                replace_input(line, &len,
+                    selected == history_size ? "" : history[selected]);
+            }
+        } else if (key == '\b') {
+            if (len) { line[--len] = '\0'; terminal_backspace(); }
         } else if (key == '\n') {
-            line[len] = 0;
+            line[len] = '\0';
             terminal_newline();
             normalize(line);
+            save_history(line);
             dispatch(line);
             len = 0;
+            line[0] = '\0';
+            selected = history_size;
             prompt();
-        } else if (key >= 32 && key <= 126 && len < sizeof(line) - 1) {
+        } else if (key >= 32 && key <= 126 && len < INPUT_LIMIT) {
             line[len++] = (char)key;
+            line[len] = '\0';
             terminal_putc_color((char)key, TERMINAL_NORMAL);
+            selected = history_size;
         }
         terminal_cursor(1);
     }
