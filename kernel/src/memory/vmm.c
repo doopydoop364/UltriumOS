@@ -114,7 +114,10 @@ bool vmm_map_test(void) {
     volatile uint64_t *root = (volatile uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
     volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
     if (!root || !pt) { test_error = 2; return false; }
-    if (root[scratch_slot] != (scratch_pdpt | 3)) { test_error = 8; return false; }
+    /* The CPU sets Accessed on upper-level entries during address walks. */
+    if ((root[scratch_slot] & (PHYS_MASK | 3ULL)) != (scratch_pdpt | 3)) {
+        test_error = 8; return false;
+    }
     if (pt[0] != 0) { test_error = 9; return false; }
     uint64_t before = pmm_free_pages();
     uint64_t page = pmm_alloc_page();
@@ -173,7 +176,9 @@ bool vmm_managed_free(void *address) {
     uint64_t physical = managed_physical[slot];
     if (!physical) return false;
     volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
-    if (!pt || pt[slot + 1] != (physical | 3)) return false;
+    /* The CPU may set Accessed (bit 5) and Dirty (bit 6) on a leaf. */
+    if (!pt || (pt[slot + 1] & (PHYS_MASK | 3ULL)) != (physical | 3))
+        return false;
     /* Drop the alias and invalidate before returning the frame to the PMM. */
     pt[slot + 1] = 0;
     invalidate(va);
