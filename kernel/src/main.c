@@ -68,7 +68,7 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.1.1\n");
+    terminal_write(" OS  0.1.2\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
