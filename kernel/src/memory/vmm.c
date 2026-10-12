@@ -57,3 +57,78 @@ bool vmm_self_test(void) {
     if (!pmm_free_page(physical)) ok = false;
     return ok && pmm_free_pages() == before;
 }
+
+/* v0.1.1: isolated, temporary mapping exercise.
+   Never overwrite an existing PML4 entry or expose arbitrary mapping writes. */
+static uint64_t scratch_va, scratch_pdpt, scratch_pd, scratch_pt;
+static uint16_t scratch_slot;
+static bool scratch_ready;
+
+static void zero_table(uint64_t physical) {
+    uint64_t *table = (uint64_t *)vmm_direct_map(physical);
+    for (unsigned i = 0; i < 512; ++i) table[i] = 0;
+}
+static void invalidate(uint64_t va) {
+    __asm__ volatile("invlpg (%0)" : : "r"(va) : "memory");
+}
+bool vmm_mapping_init(void) {
+    uint64_t cr3, cr4;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    if (cr4 & (1ULL << 12)) return false; /* 5-level not yet writable */
+    uint64_t *root = (uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
+    if (!root || scratch_ready) return false;
+    unsigned index = 256;
+    while (index < 511 && (root[index] & PRESENT)) ++index;
+    if (index == 511) return false;
+    uint64_t a = pmm_alloc_page();
+    uint64_t b = pmm_alloc_page();
+    uint64_t c = pmm_alloc_page();
+    if (!a || !b || !c) {
+        if (a) pmm_free_page(a);
+        if (b) pmm_free_page(b);
+        if (c) pmm_free_page(c);
+        return false;
+    }
+    zero_table(a); zero_table(b); zero_table(c);
+    uint64_t *pdpt = (uint64_t *)vmm_direct_map(a);
+    uint64_t *pd = (uint64_t *)vmm_direct_map(b);
+    pdpt[0] = b | 3;
+    pd[0] = c | 3;
+    /* PML4 upper entries sign extend to 64 bits. */
+    uint64_t va = 0xffff000000000000ULL | ((uint64_t)index << 39);
+    root[index] = a | 3;
+    scratch_va = va;
+    scratch_pdpt = a; scratch_pd = b; scratch_pt = c;
+    scratch_slot = (uint16_t)index;
+    scratch_ready = true;
+    return true;
+}
+bool vmm_map_test(void) {
+    if (!scratch_ready) return false;
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t *root = (uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
+    uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
+    if (!root || !pt || root[scratch_slot] != (scratch_pdpt | 3) ||
+        pt[0] != 0) return false;
+    uint64_t before = pmm_free_pages();
+    uint64_t page = pmm_alloc_page();
+    if (!page) return false;
+    bool ok = false;
+    pt[0] = page | 3 | (1ULL << 63); /* NX for data-only mapping */
+    invalidate(scratch_va);
+    uint64_t translated = 0;
+    if (vmm_translate(scratch_va + 29, &translated) &&
+        translated == page + 29) {
+        volatile uint8_t *alias = (volatile uint8_t *)(uintptr_t)scratch_va;
+        volatile uint8_t *direct = (volatile uint8_t *)vmm_direct_map(page);
+        alias[29] = 0x6b;
+        ok = direct[29] == 0x6b;
+    }
+    pt[0] = 0;
+    invalidate(scratch_va);
+    if (vmm_translate(scratch_va, &translated)) ok = false;
+    if (!pmm_free_page(page)) ok = false;
+    return ok && pmm_free_pages() == before;
+}
