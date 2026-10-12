@@ -13,4 +13,5 @@ void *vmm_managed_alloc(void);
 bool vmm_managed_free(void *address);
 uint64_t vmm_managed_live(void);
 bool vmm_managed_test(void);
+unsigned vmm_test_error(void);
 #endif
