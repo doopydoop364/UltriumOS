@@ -42,9 +42,11 @@ void shell_run(void) {
     char line[128];
     size_t len = 0;
     prompt();
+    terminal_cursor(1);
     for (;;) {
         int key = keyboard_poll();
         if (key == 0) continue;
+        terminal_cursor(0);
         if (key == '\b') {
             if (len) {
                 --len;
@@ -62,5 +64,6 @@ void shell_run(void) {
             line[len++] = (char)key;
             terminal_putc_color((char)key, TERMINAL_NORMAL);
         }
+        terminal_cursor(1);
     }
 }
