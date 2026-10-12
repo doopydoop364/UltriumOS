@@ -4,6 +4,7 @@
 #include "terminal/terminal.h"
 #include "system/reboot.h"
 #include "memory/pmm.h"
+#include "memory/heap.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -34,9 +35,9 @@ static void help(void) {
     terminal_write("  ultrium system info, ultrium system memory\n  ultrium ai status\n");
     terminal_write("External programs will use unprefixed names when supported.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.0.6\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.0.7\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.0.6\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.0.7\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -51,6 +52,8 @@ static void memory_info(void) {
     print_uint(pmm_free_pages());
     terminal_write("\nAllocated pages: ");
     print_uint(pmm_used_pages());
+    terminal_write("\nHeap allocations: ");
+    print_uint(heap_live_allocations());
     terminal_write("\nPage size: 4096 bytes\n");
 }
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
