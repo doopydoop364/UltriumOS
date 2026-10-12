@@ -51,6 +51,37 @@ static void glyph_rows(char ch, uint8_t rows[7]) {
         case ']': { static const uint8_t p[7] = {0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         case '-': { static const uint8_t p[7] = {0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         case ':': { static const uint8_t p[7] = {0b00000, 0b01100, 0b01100, 0b00000, 0b01100, 0b01100, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '2': { static const uint8_t p[7] = {0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '3': { static const uint8_t p[7] = {0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '4': { static const uint8_t p[7] = {0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '5': { static const uint8_t p[7] = {0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '6': { static const uint8_t p[7] = {0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '7': { static const uint8_t p[7] = {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '8': { static const uint8_t p[7] = {0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '9': { static const uint8_t p[7] = {0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'J': { static const uint8_t p[7] = {0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'Q': { static const uint8_t p[7] = {0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'W': { static const uint8_t p[7] = {0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'X': { static const uint8_t p[7] = {0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'Z': { static const uint8_t p[7] = {0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '?': { static const uint8_t p[7] = {0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '!': { static const uint8_t p[7] = {0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '_': { static const uint8_t p[7] = {0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '/': { static const uint8_t p[7] = {0b00001, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b10000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case ',': { static const uint8_t p[7] = {0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100, 0b01000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '=': { static const uint8_t p[7] = {0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '(': { static const uint8_t p[7] = {0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case ')': { static const uint8_t p[7] = {0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '+': { static const uint8_t p[7] = {0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case ';': { static const uint8_t p[7] = {0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b01000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '\'': { static const uint8_t p[7] = {0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '"': { static const uint8_t p[7] = {0b01010, 0b01010, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '@': { static const uint8_t p[7] = {0b01110, 0b10001, 0b10111, 0b10101, 0b10111, 0b10000, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '#': { static const uint8_t p[7] = {0b01010, 0b11111, 0b01010, 0b01010, 0b11111, 0b01010, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '*': { static const uint8_t p[7] = {0b00000, 0b10101, 0b01110, 0b11111, 0b01110, 0b10101, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '|': { static const uint8_t p[7] = {0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '<': { static const uint8_t p[7] = {0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '\\': { static const uint8_t p[7] = {0b10000, 0b10000, 0b01000, 0b00100, 0b00010, 0b00001, 0b00001}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         default: break; // Spaces and unsupported symbols are blank.
     }
 }
@@ -104,10 +135,10 @@ static void scroll_if_needed(void) {
 
 void terminal_init(struct limine_framebuffer *fb) {
     screen = fb;
-    background = fb_pixel(fb, 10, 13, 18);
-    ink = fb_pixel(fb, 220, 226, 234);
+    background = fb_pixel(fb, 0, 0, 0);
+    ink = fb_pixel(fb, 215, 215, 215);
     accent = fb_pixel(fb, 105, 230, 192);
-    muted = fb_pixel(fb, 144, 156, 169);
+    muted = fb_pixel(fb, 136, 136, 136);
     terminal_clear();
 }
 
