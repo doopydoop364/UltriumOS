@@ -82,6 +82,15 @@ static void glyph_rows(char ch, uint8_t rows[7]) {
         case 'U': { static const uint8_t p[7] = {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         case 'V': { static const uint8_t p[7] = {0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         case '.': { static const uint8_t p[7] = {0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'F': { static const uint8_t p[7] = {0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'H': { static const uint8_t p[7] = {0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'P': { static const uint8_t p[7] = {0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case 'Y': { static const uint8_t p[7] = {0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '>': { static const uint8_t p[7] = {0b10000, 0b01000, 0b00100, 0b00010, 0b00100, 0b01000, 0b10000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '[': { static const uint8_t p[7] = {0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case ']': { static const uint8_t p[7] = {0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case '-': { static const uint8_t p[7] = {0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
+        case ':': { static const uint8_t p[7] = {0b00000, 0b01100, 0b01100, 0b00000, 0b01100, 0b01100, 0b00000}; for (size_t i = 0; i < 7; ++i) rows[i] = p[i]; break; }
         default: break; // Spaces and unsupported symbols are blank.
     }
 }
@@ -113,16 +122,26 @@ static void draw_text(struct limine_framebuffer *fb, const char *text,
     }
 }
 
+// Minimal, static CLI-style boot display (keyboard support will follow).
 static void welcome_screen(struct limine_framebuffer *fb) {
-    uint32_t background = fb_pixel(fb, 11, 16, 32);
-    uint32_t foreground = fb_pixel(fb, 237, 242, 249);
+    uint32_t background = fb_pixel(fb, 10, 13, 18);
+    uint32_t foreground = fb_pixel(fb, 220, 226, 234);
     uint32_t accent = fb_pixel(fb, 105, 230, 192);
-    uint32_t muted = fb_pixel(fb, 158, 176, 198);
+    uint32_t muted = fb_pixel(fb, 144, 156, 169);
+    const uint64_t x = 24;
+    const uint64_t scale = 2;
     fill_screen(fb, background);
-    draw_text(fb, "ULTRIUM OS", 48, 64, 4, foreground);
-    draw_text(fb, "KERNEL 0.0.1", 48, 128, 2, muted);
-    draw_text(fb, "BOOT OK", 48, 182, 2, accent);
-    draw_text(fb, "SHELL COMING SOON", 48, 222, 2, muted);
+
+    // The product name is split so ULTRIUM alone receives the accent.
+    draw_text(fb, "ULTRIUM", x, 24, scale, accent);
+    draw_text(fb, " OS  0.0.1", x + 7 * 6 * scale, 24, scale, foreground);
+
+    draw_text(fb, "KERNEL LOADED", x, 72, scale, foreground);
+    draw_text(fb, "FRAMEBUFFER READY", x, 96, scale, foreground);
+    draw_text(fb, "SHELL NOT READY", x, 120, scale, muted);
+
+    // This is a visual placeholder, not an interactive command prompt.
+    draw_text(fb, "ULTRIUM>", x, 168, scale, accent);
 }
 
 void kmain(void) {
