@@ -4,6 +4,7 @@
 #include "terminal/terminal.h"
 #include "system/reboot.h"
 #include "memory/pmm.h"
+#include "memory/vmm.h"
 #include "memory/heap.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
