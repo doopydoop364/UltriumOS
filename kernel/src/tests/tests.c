@@ -358,12 +358,70 @@ static const char *region_allocations(void) {
     return 0;
 }
 
+static const char *page_permissions(void) {
+    if (!vmm_page_protection_ready()) return "NX and supervisor write protection unavailable";
+    uint64_t frames_before = pmm_free_pages();
+    void *pages = vmm_alloc_pages(2);
+    if (!pages) return "default permission allocation failed";
+    uint64_t base = (uint64_t)(uintptr_t)pages;
+    uint32_t permissions = 0;
+    for (unsigned i = 0; i < 2; ++i) {
+        if (!vmm_get_page_permissions((void *)(uintptr_t)(base + (uint64_t)i * 4096),
+                                      &permissions) ||
+            permissions != (VMM_PAGE_READ | VMM_PAGE_WRITE)) {
+            vmm_free_pages(pages);
+            return "default page permissions are not RW and NX";
+        }
+    }
+    if (vmm_get_page_permissions((void *)(uintptr_t)(base + 1), &permissions) ||
+        vmm_set_pages_permissions((void *)(uintptr_t)(base + 1), VMM_PAGE_READ) ||
+        vmm_set_pages_permissions(pages, VMM_PAGE_WRITE) ||
+        vmm_set_pages_permissions(pages, VMM_PAGE_READ | VMM_PAGE_WRITE |
+                                          VMM_PAGE_EXECUTE)) {
+        vmm_free_pages(pages);
+        return "invalid permission request accepted";
+    }
+    if (!vmm_set_pages_permissions(pages, VMM_PAGE_READ)) {
+        vmm_free_pages(pages);
+        return "read-only permission update failed";
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        if (!vmm_get_page_permissions((void *)(uintptr_t)(base + (uint64_t)i * 4096),
+                                      &permissions) || permissions != VMM_PAGE_READ) {
+            vmm_free_pages(pages);
+            return "read-only update did not cover every page";
+        }
+    }
+    if (!vmm_set_pages_permissions(pages, VMM_PAGE_READ | VMM_PAGE_EXECUTE)) {
+        vmm_free_pages(pages);
+        return "read-execute permission update failed";
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        if (!vmm_get_page_permissions((void *)(uintptr_t)(base + (uint64_t)i * 4096),
+                                      &permissions) ||
+            permissions != (VMM_PAGE_READ | VMM_PAGE_EXECUTE)) {
+            vmm_free_pages(pages);
+            return "read-execute update did not cover every page";
+        }
+    }
+    if (!vmm_free_pages(pages) || pmm_free_pages() != frames_before)
+        return "permissioned allocation cleanup failed";
+
+    void *read_only = vmm_alloc_pages_with_permissions(1, VMM_PAGE_READ);
+    if (!read_only) return "read-only allocation failed";
+    bool freed = vmm_free_pages(read_only);
+    if (!freed || pmm_free_pages() != frames_before)
+        return "read-only allocation cleanup failed";
+    return 0;
+}
+
 static const struct test_case memory_cases[] = {
     {"physical self", physical_self}, {"physical edges", physical_edges},
     {"heap self", heap_self}, {"heap edges", heap_edges},
     {"slab stress", slab_stress}, {"page tables", table_self},
     {"scratch mapping", mapping_self}, {"managed pages", managed_self},
-    {"managed edges", managed_edges}, {"virtual regions", region_allocations}
+    {"managed edges", managed_edges}, {"virtual regions", region_allocations},
+    {"VM permissions", page_permissions}
 };
 static void run(const struct test_case *cases, size_t count) {
     serial_init();

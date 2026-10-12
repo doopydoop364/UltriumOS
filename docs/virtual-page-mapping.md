@@ -13,9 +13,9 @@ This initial page-table writing checkpoint builds an **isolated scratch mapping*
 ## Limits
 - Kernel-only, single CPU, no concurrent page-table mutations, no page sharing ownership tracking, no arbitrary mappings, no user-mode support.
 - Fails gracefully when no free upper-half PML4 slot exists; do not force-map over existing memory.
-- The mapping uses supervisor read/write permission. No execution permission enforcement is assumed.
+- The v0.1.1 scratch mapping uses supervisor read/write, nonexecutable permission in current kernels; permission selection applies to the later region API.
 - CPU faults still halt the OS; test only in QEMU.
-- Future work: protect page-table edits with locking, track virtual regions, add table cleanup, allocate multi-page ranges and add page permissions.
+- At the time of this v0.1.1 checkpoint, future work included region tracking, table cleanup, multi-page ranges, and page permissions. Region and permission APIs are documented in `virtual-memory-architecture.md` and `page-permissions.md`.
 
 ## QEMU checks
 Check for `SCRATCH VIRTUAL MAPPING READY`, and run `ultrium system memory mapping test` (expect PASSED). Then re-run `ultrium system memory map test` and `ultrium system memory test` to catch regressions.
