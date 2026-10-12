@@ -119,20 +119,18 @@ void terminal_cursor(int visible) {
             put_pixel(screen, x, y, color);
 }
 
-/* Single-line editor at the current prompt. Call with cursor at input end;
-   redraw by erasing glyph cells instead of painting over existing ink. */
+/* The shell edits on one row; keep its prompt anchor and redraw glyphs. */
+static uint64_t input_x, input_y;
+void terminal_input_begin(void) { input_x = cursor_x; input_y = cursor_y; }
 void terminal_input_redraw(const char *line, unsigned length, unsigned caret) {
-    if (!screen || length > 70 || caret > length) return;
-    uint64_t end = cursor_x;
-    uint64_t begin = end >= (uint64_t)length * ADVANCE + MARGIN ?
-        end - (uint64_t)length * ADVANCE : MARGIN;
-    /* Editor redraw assumes the command stays on one framebuffer row. */
+    if (!screen || !line || length > 70 || caret > length) return;
     for (unsigned i = 0; i <= 70; ++i) {
-        uint64_t x = begin + (uint64_t)i * ADVANCE;
+        uint64_t x = input_x + (uint64_t)i * ADVANCE;
         if (x + ADVANCE + MARGIN > screen->width) break;
-        for (uint64_t y = cursor_y; y < cursor_y + GLYPH_HEIGHT && y < screen->height; ++y)
+        for (uint64_t y = input_y; y < input_y + GLYPH_HEIGHT && y < screen->height; ++y)
             for (uint64_t px = x; px < x + ADVANCE; ++px) put_pixel(screen, px, y, background);
-        if (i < length) draw_character(screen, line[i], x, cursor_y, ink);
+        if (i < length) draw_character(screen, line[i], x, input_y, ink);
     }
-    cursor_x = begin + (uint64_t)caret * ADVANCE;
+    cursor_x = input_x + (uint64_t)caret * ADVANCE;
+    cursor_y = input_y;
 }
