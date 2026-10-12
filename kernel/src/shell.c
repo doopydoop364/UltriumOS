@@ -37,6 +37,7 @@ static void help(void) {
     terminal_write("  clear       Clear commands (clear help)\n");
     terminal_write("General commands:\n");
     terminal_write("  help, reboot\n");
+    terminal_write("Shortcuts: Ctrl+C cancel, Ctrl+U clear line, Ctrl+W delete word, Ctrl+L clear screen\n");
 }
 static void clear_help(void) {
     terminal_write("Clear commands:\n");
@@ -247,7 +248,28 @@ void shell_run(void) {
         int key = keyboard_poll();
         if (!key) continue;
         terminal_cursor(0);
-        if (key == KEY_UP) {
+        if (key == KEY_CTRL_C) {
+            terminal_write("^C\n");
+            len = 0;
+            line[0] = '\0';
+            selected = history_size;
+            prompt();
+        } else if (key == KEY_CTRL_U) {
+            replace_input(line, &len, "");
+            selected = history_size;
+        } else if (key == KEY_CTRL_W) {
+            while (len && line[len - 1] == ' ') {
+                line[--len] = '\0'; terminal_backspace();
+            }
+            while (len && line[len - 1] != ' ') {
+                line[--len] = '\0'; terminal_backspace();
+            }
+            selected = history_size;
+        } else if (key == KEY_CTRL_L) {
+            terminal_clear();
+            prompt();
+            terminal_write(line);
+        } else if (key == KEY_UP) {
             if (selected > 0) {
                 --selected;
                 replace_input(line, &len, history[selected]);
