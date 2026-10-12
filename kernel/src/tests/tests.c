@@ -47,6 +47,50 @@ static void report_number(uint64_t value) {
 typedef const char *(*test_fn)(void);
 struct test_case { const char *name; test_fn run; };
 static const char *physical_self(void) { return pmm_self_test() ? 0 : "PMM self-test failed"; }
+static const char *physical_ownership(void) {
+    uint64_t before = pmm_free_pages();
+    struct pmm_page_handle owner = {0}, stale, forged;
+    if (!pmm_page_alloc(&owner)) return "owned frame allocation failed";
+    stale = owner;
+    forged = owner;
+    forged.generation += 2;
+    if (pmm_page_handle_is_empty(&owner) || !pmm_page_handle_valid(&owner) ||
+        pmm_page_release(&forged) || !pmm_page_handle_valid(&owner)) {
+        pmm_page_release(&owner);
+        return "forged generation accepted or valid owner rejected";
+    }
+    forged = owner;
+    forged.physical = 1;
+    if (pmm_page_release(&forged)) {
+        pmm_page_release(&owner);
+        return "forged physical address accepted";
+    }
+    uint64_t old_physical = owner.physical;
+    uint32_t old_generation = owner.generation;
+    if (!pmm_page_release(&owner) || !pmm_page_handle_is_empty(&owner) ||
+        pmm_page_release(&owner) || pmm_page_release(&stale))
+        return "double or stale release accepted";
+    struct pmm_page_handle reused = {0};
+    if (!pmm_page_alloc(&reused) || reused.physical != old_physical ||
+        reused.generation == old_generation || pmm_page_release(&stale)) {
+        if (reused.physical) pmm_page_release(&reused);
+        return "reused frame did not reject stale generation";
+    }
+    if (!pmm_page_release(&reused) || pmm_free_pages() != before)
+        return "owned frame accounting did not recover";
+    return 0;
+}
+static const char *physical_exhaustion(void) {
+    uint64_t before = pmm_free_pages();
+    struct pmm_page_handle first = {0}, failed = {0};
+    pmm_test_fail_alloc_after(1);
+    bool first_ok = pmm_page_alloc(&first);
+    bool exhausted = !pmm_page_alloc(&failed);
+    pmm_test_fail_alloc_after(-1);
+    bool restored = pmm_page_handle_is_empty(&failed) && first.physical &&
+                    pmm_page_release(&first) && pmm_free_pages() == before;
+    return first_ok && exhausted && restored ? 0 : "injected PMM exhaustion corrupted ownership";
+}
 static const char *heap_self(void) { return heap_self_test() ? 0 : "heap self-test failed"; }
 static const char *table_self(void) { return vmm_self_test() ? 0 : "HHDM translation failed"; }
 static const char *mapping_self(void) { return vmm_map_test() ? 0 : "scratch mapping stage"; }
@@ -54,29 +98,31 @@ static const char *managed_self(void) { return vmm_managed_test() ? 0 : "managed
 
 static const char *physical_edges(void) {
     uint64_t before = pmm_free_pages();
-    uint64_t pages[4] = {0};
+    struct pmm_page_handle pages[4] = {{0}};
     const char *error = 0;
-    if (pmm_free_page(0) || pmm_free_page(1)) return "invalid physical free accepted";
+    struct pmm_page_handle forged = {.physical = 0, .generation = 1};
+    if (pmm_page_release(&forged)) return "invalid physical owner accepted";
     for (unsigned i = 0; i < 4; ++i) {
-        pages[i] = pmm_alloc_page();
-        if (!pages[i]) { error = "four-page allocation failed"; break; }
+        if (!pmm_page_alloc(&pages[i])) { error = "four-page allocation failed"; break; }
         for (unsigned j = 0; j < i; ++j)
-            if (pages[i] == pages[j]) error = "duplicate physical frame";
+            if (pages[i].physical == pages[j].physical) error = "duplicate physical frame";
     }
     if (!error && pmm_free_pages() + 4 != before) error = "PMM debit mismatch";
-    if (pages[1]) {
-        if (!pmm_free_page(pages[1])) error = "physical free failed";
+    if (pages[1].physical) {
+        struct pmm_page_handle stale = pages[1];
+        if (!pmm_page_release(&pages[1])) error = "physical free failed";
         else {
-            uint64_t reused = pmm_alloc_page();
-            if (reused != pages[1]) {
+            struct pmm_page_handle reused = {0};
+            if (!pmm_page_alloc(&reused) || reused.physical != stale.physical ||
+                reused.generation == stale.generation) {
                 error = "released frame was not reused";
-                pages[1] = 0; /* That frame is on the free stack. */
-                if (reused && !pmm_free_page(reused)) error = "physical cleanup failed";
-            }
+                if (reused.physical) pmm_page_release(&reused);
+            } else if (pmm_page_release(&stale)) error = "stale physical owner accepted";
+            else if (!pmm_page_release(&reused)) error = "reused frame release failed";
         }
     }
     for (unsigned i = 0; i < 4; ++i)
-        if (pages[i] && !pmm_free_page(pages[i])) error = "physical cleanup failed";
+        if (pages[i].physical && !pmm_page_release(&pages[i])) error = "physical cleanup failed";
     if (pmm_free_pages() != before) error = "PMM accounting not restored";
     return error;
 }
@@ -255,28 +301,32 @@ static const char *region_allocations(void) {
         pmm_free_pages() != free_frames) return "region cleanup accounting mismatch";
 
     /* Arrange a two-frame free-list gap and prove the virtual run can map it. */
-    uint64_t physical[16] = {0};
+    struct pmm_page_handle physical[16] = {{0}};
     unsigned physical_count = 0;
     while (physical_count < 16 &&
-           (physical[physical_count] = pmm_alloc_page()) != 0) ++physical_count;
+           pmm_page_alloc(&physical[physical_count])) ++physical_count;
     if (physical_count != 16) {
-        for (unsigned i = 0; i < physical_count; ++i) pmm_free_page(physical[i]);
+        for (unsigned i = 0; i < physical_count; ++i) pmm_page_release(&physical[i]);
         return "noncontiguous backing setup failed";
     }
     unsigned first_frame = 16, second_frame = 16;
     for (unsigned i = 0; i < physical_count && first_frame == 16; ++i)
         for (unsigned j = i + 1; j < physical_count; ++j) {
-            uint64_t difference = physical[i] > physical[j]
-                ? physical[i] - physical[j] : physical[j] - physical[i];
+            uint64_t difference = physical[i].physical > physical[j].physical
+                ? physical[i].physical - physical[j].physical
+                : physical[j].physical - physical[i].physical;
             if (difference > 4096) { first_frame = i; second_frame = j; break; }
         }
     if (first_frame == 16) {
-        for (unsigned i = 0; i < physical_count; ++i) pmm_free_page(physical[i]);
+        for (unsigned i = 0; i < physical_count; ++i) pmm_page_release(&physical[i]);
         return "could not arrange noncontiguous physical frames";
     }
-    if (!pmm_free_page(physical[first_frame]) || !pmm_free_page(physical[second_frame])) {
+    uint64_t first_physical = physical[first_frame].physical;
+    uint64_t second_physical = physical[second_frame].physical;
+    if (!pmm_page_release(&physical[first_frame]) ||
+        !pmm_page_release(&physical[second_frame])) {
         for (unsigned i = 0; i < physical_count; ++i)
-            if (i != first_frame && i != second_frame) pmm_free_page(physical[i]);
+            if (i != first_frame && i != second_frame) pmm_page_release(&physical[i]);
         return "noncontiguous backing setup cleanup failed";
     }
     void *scattered = vmm_alloc_pages(2);
@@ -284,12 +334,12 @@ static const char *region_allocations(void) {
     bool scattered_ok = scattered &&
         vmm_translate((uint64_t)(uintptr_t)scattered, &mapped0) &&
         vmm_translate((uint64_t)(uintptr_t)scattered + 4096, &mapped1) &&
-        (mapped0 & ~4095ULL) == physical[second_frame] &&
-        (mapped1 & ~4095ULL) == physical[first_frame] &&
+        (mapped0 & ~4095ULL) == second_physical &&
+        (mapped1 & ~4095ULL) == first_physical &&
         (mapped0 & ~4095ULL) != (mapped1 & ~4095ULL);
     bool scattered_freed = !scattered || vmm_free_pages(scattered);
     for (unsigned i = 0; i < physical_count; ++i)
-        if (i != first_frame && i != second_frame) pmm_free_page(physical[i]);
+        if (i != first_frame && i != second_frame) pmm_page_release(&physical[i]);
     if (!scattered_ok || !scattered_freed || pmm_free_pages() != free_frames)
         return "noncontiguous physical backing was not preserved";
 
@@ -322,6 +372,18 @@ static const char *region_allocations(void) {
     vmm_test_fail_alloc_after(-1);
     if (!vmm_region_stats_get(&current) || !same_region_stats(&baseline, &current) ||
         pmm_free_pages() != free_frames) return "failed allocation did not roll back";
+
+    /* Fail through the PMM itself after page-table/backing acquisitions have
+       started, exercising ownership-handle rollback across subsystem APIs. */
+    pmm_test_fail_alloc_after(2);
+    unexpected = vmm_alloc_pages(5);
+    pmm_test_fail_alloc_after(-1);
+    if (unexpected) {
+        vmm_free_pages(unexpected);
+        return "injected PMM failure was ignored by VMM";
+    }
+    if (!vmm_region_stats_get(&current) || !same_region_stats(&baseline, &current) ||
+        pmm_free_pages() != free_frames) return "PMM failure leaked region ownership";
 
     void *full = vmm_alloc_pages(VMM_REGION_MAX_PAGES);
     if (!full) return "full-window allocation failed";
@@ -416,7 +478,8 @@ static const char *page_permissions(void) {
 }
 
 static const struct test_case memory_cases[] = {
-    {"physical self", physical_self}, {"physical edges", physical_edges},
+    {"physical self", physical_self}, {"physical ownership", physical_ownership},
+    {"physical exhaustion", physical_exhaustion}, {"physical edges", physical_edges},
     {"heap self", heap_self}, {"heap edges", heap_edges},
     {"slab stress", slab_stress}, {"page tables", table_self},
     {"scratch mapping", mapping_self}, {"managed pages", managed_self},
