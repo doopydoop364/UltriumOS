@@ -4,6 +4,7 @@
 #include "terminal/terminal.h"
 #include "system/reboot.h"
 #include "memory/pmm.h"
+#include "memory/vmm.h"
 #include "memory/heap.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
@@ -48,6 +49,7 @@ static void ultrium_help(void) {
     terminal_write("  ultrium system info\n");
     terminal_write("  ultrium system memory\n");
     terminal_write("  ultrium system memory test\n");
+    terminal_write("  ultrium system memory map test\n");
     terminal_write("  ultrium ai help  (AI namespace)\n");
 }
 static void ai_help(void) {
@@ -56,9 +58,9 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.0.8\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.0.9\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.0.8\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.0.9\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -108,6 +110,10 @@ static void memory_test(void) {
     terminal_write(ok ? "SLAB STRESS TEST PASSED (128 x 32 bytes)\n"
                       : "SLAB STRESS TEST FAILED\n");
 }
+static void memory_map_test(void) {
+    terminal_write(vmm_self_test() ? "PAGE TABLE TEST PASSED\n"
+                                   : "PAGE TABLE TEST FAILED\n");
+}
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
@@ -115,6 +121,7 @@ static const struct command commands[] = {
     {"help", ultrium_help}, {"version", version},
     {"system info", system_info}, {"system memory", memory_info},
     {"system memory test", memory_test},
+    {"system memory map test", memory_map_test},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
