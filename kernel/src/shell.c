@@ -54,11 +54,26 @@ static void system_help(void) {
     terminal_write("Ultrium system commands:\n");
     terminal_write("  ultrium system help\n");
     terminal_write("  ultrium system info\n");
-    terminal_write("  ultrium system memory\n");
-    terminal_write("  ultrium system memory test\n");
-    terminal_write("  ultrium system memory map test\n");
-    terminal_write("  ultrium system memory mapping test\n");
+    terminal_write("  ultrium system memory help  (Memory namespace)\n");
     terminal_write("  ultrium system exceptions\n");
+}
+static void memory_help(void) {
+    terminal_write("Ultrium memory commands:\n");
+    terminal_write("  ultrium system memory\n");
+    terminal_write("  ultrium system memory help\n");
+    terminal_write("  ultrium system memory test\n");
+    terminal_write("  ultrium system memory map help\n");
+    terminal_write("  ultrium system memory mapping help\n");
+}
+static void memory_map_help(void) {
+    terminal_write("Page table inspection commands:\n");
+    terminal_write("  ultrium system memory map help\n");
+    terminal_write("  ultrium system memory map test\n");
+}
+static void memory_mapping_help(void) {
+    terminal_write("Virtual mapping commands:\n");
+    terminal_write("  ultrium system memory mapping help\n");
+    terminal_write("  ultrium system memory mapping test\n");
 }
 static void ai_help(void) {
     terminal_write("Ultrium AI commands:\n");
@@ -136,7 +151,10 @@ static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 static const struct command commands[] = {
     {"help", ultrium_help}, {"version", version},
-    {"system help", system_help}, {"system info", system_info}, {"system memory", memory_info},
+    {"system help", system_help}, {"system info", system_info},
+    {"system memory", memory_info}, {"system memory help", memory_help},
+    {"system memory map help", memory_map_help},
+    {"system memory mapping help", memory_mapping_help},
     {"system memory test", memory_test},
     {"system memory map test", memory_map_test},
     {"system memory mapping test", mapping_test},
