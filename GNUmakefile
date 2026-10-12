@@ -133,7 +133,7 @@ limine-binary/limine: limine-binary.tar.gz
 		LIBS="$(HOST_LIBS)"
 
 kernel/.deps-obtained:
-	./kernel/get-deps
+	sh kernel/get-deps
 
 .PHONY: kernel
 kernel: kernel/.deps-obtained
