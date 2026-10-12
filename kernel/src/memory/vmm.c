@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 #include "vmm.h"
 #include "pmm.h"
 static uint64_t offset;
@@ -60,7 +61,7 @@ bool vmm_self_test(void) {
 
 /* v0.1.1: isolated, temporary mapping exercise.
    Never overwrite an existing PML4 entry or expose arbitrary mapping writes. */
-static uint64_t scratch_va, scratch_pdpt, scratch_pd, scratch_pt;
+static uint64_t scratch_va, scratch_pdpt, scratch_pt;
 static uint16_t scratch_slot;
 static bool scratch_ready;
 
@@ -99,7 +100,7 @@ bool vmm_mapping_init(void) {
     uint64_t va = 0xffff000000000000ULL | ((uint64_t)index << 39);
     root[index] = a | 3;
     scratch_va = va;
-    scratch_pdpt = a; scratch_pd = b; scratch_pt = c;
+    scratch_pdpt = a; scratch_pt = c;
     scratch_slot = (uint16_t)index;
     scratch_ready = true;
     return true;
