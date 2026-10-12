@@ -44,6 +44,7 @@ static void hcf(void) {
 }
 
 #include "terminal/terminal.h"
+#include "shell.h"
 
 void kmain(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) hcf();
