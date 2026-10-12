@@ -145,13 +145,14 @@ static void exception_status(void) {
         "CPU exception handlers: unavailable\n");
 }
 static void mapping_test(void) {
-    terminal_write(vmm_map_test() ?
-        "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
+    bool passed = vmm_map_test();
+    terminal_write(passed ? "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
+    if (!passed) { terminal_write("Failure stage: "); print_uint(vmm_test_error()); terminal_write("\n"); }
 }
 static void managed_test(void) {
-    terminal_write(vmm_managed_test() ?
-        "MANAGED VIRTUAL PAGES TEST PASSED\n" :
-        "MANAGED VIRTUAL PAGES TEST FAILED\n");
+    bool passed = vmm_managed_test();
+    terminal_write(passed ? "MANAGED VIRTUAL PAGES TEST PASSED\n" : "MANAGED VIRTUAL PAGES TEST FAILED\n");
+    if (!passed) { terminal_write("Failure stage: "); print_uint(vmm_test_error()); terminal_write("\n"); }
 }
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
