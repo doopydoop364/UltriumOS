@@ -118,3 +118,19 @@ void terminal_cursor(int visible) {
         for (uint64_t x = cursor_x; x < cursor_x + ADVANCE && x < screen->width; ++x)
             put_pixel(screen, x, y, color);
 }
+
+/* The shell edits on one row; keep its prompt anchor and redraw glyphs. */
+static uint64_t input_x, input_y;
+void terminal_input_begin(void) { input_x = cursor_x; input_y = cursor_y; }
+void terminal_input_redraw(const char *line, unsigned length, unsigned caret) {
+    if (!screen || !line || length > 70 || caret > length) return;
+    for (unsigned i = 0; i <= 70; ++i) {
+        uint64_t x = input_x + (uint64_t)i * ADVANCE;
+        if (x + ADVANCE + MARGIN > screen->width) break;
+        for (uint64_t y = input_y; y < input_y + GLYPH_HEIGHT && y < screen->height; ++y)
+            for (uint64_t px = x; px < x + ADVANCE; ++px) put_pixel(screen, px, y, background);
+        if (i < length) draw_character(screen, line[i], x, input_y, ink);
+    }
+    cursor_x = input_x + (uint64_t)caret * ADVANCE;
+    cursor_y = input_y;
+}

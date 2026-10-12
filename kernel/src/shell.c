@@ -37,6 +37,7 @@ static void help(void) {
     terminal_write("  clear       Clear commands (clear help)\n");
     terminal_write("General commands:\n");
     terminal_write("  help, reboot\n");
+    terminal_write("Shortcuts: Left/Right, Home/End, Delete, Ctrl+C/U/W/L\n");
 }
 static void clear_help(void) {
     terminal_write("Clear commands:\n");
@@ -74,6 +75,7 @@ static void memory_mapping_help(void) {
     terminal_write("Virtual mapping commands:\n");
     terminal_write("  ultrium system memory mapping help\n");
     terminal_write("  ultrium system memory mapping test\n");
+    terminal_write("  ultrium system memory mapping managed test\n");
 }
 static void ai_help(void) {
     terminal_write("Ultrium AI commands:\n");
@@ -81,9 +83,9 @@ static void ai_help(void) {
     terminal_write("  ultrium ai status\n");
     terminal_write("AI services are not installed.\n");
 }
-static void version(void) { terminal_write("Ultrium OS 0.1.1\n"); }
+static void version(void) { terminal_write("Ultrium OS 0.1.2\n"); }
 static void system_info(void) {
-    terminal_write("OS: Ultrium OS\nKernel: 0.1.1\nArchitecture: x86_64\nMode: CLI\n");
+    terminal_write("OS: Ultrium OS\nKernel: 0.1.2\nArchitecture: x86_64\nMode: CLI\n");
 }
 static void print_uint(uint64_t value) {
     char digits[21];
@@ -143,8 +145,14 @@ static void exception_status(void) {
         "CPU exception handlers: unavailable\n");
 }
 static void mapping_test(void) {
-    terminal_write(vmm_map_test() ?
-        "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
+    bool passed = vmm_map_test();
+    terminal_write(passed ? "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
+    if (!passed) { terminal_write("Failure stage: "); print_uint(vmm_test_error()); terminal_write("\n"); }
+}
+static void managed_test(void) {
+    bool passed = vmm_managed_test();
+    terminal_write(passed ? "MANAGED VIRTUAL PAGES TEST PASSED\n" : "MANAGED VIRTUAL PAGES TEST FAILED\n");
+    if (!passed) { terminal_write("Failure stage: "); print_uint(vmm_test_error()); terminal_write("\n"); }
 }
 static void ai_status(void) { terminal_write("AI services are not installed.\n"); }
 static void clear(void) { terminal_clear(); }
@@ -158,6 +166,7 @@ static const struct command commands[] = {
     {"system memory test", memory_test},
     {"system memory map test", memory_map_test},
     {"system memory mapping test", mapping_test},
+    {"system memory mapping managed test", managed_test},
     {"system exceptions", exception_status},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
@@ -209,14 +218,11 @@ static size_t line_length(const char *line) {
     return i;
 }
 
-static void replace_input(char *line, size_t *len, const char *text) {
-    while (*len) {
-        terminal_backspace();
-        --*len;
-    }
+static void replace_input(char *line, size_t *len, size_t *caret, const char *text) {
     copy_line(line, text);
     *len = line_length(line);
-    terminal_write(line);
+    *caret = *len;
+    terminal_input_redraw(line, (unsigned)*len, (unsigned)*caret);
 }
 
 static void save_history(const char *line) {
@@ -232,43 +238,84 @@ static void save_history(const char *line) {
 
 void shell_run(void) {
     char line[INPUT_LIMIT + 1] = {0};
-    size_t len = 0;
-    size_t selected = 0;
+    size_t len = 0, caret = 0, selected = 0;
     prompt();
+    terminal_input_begin();
     terminal_cursor(1);
     for (;;) {
         int key = keyboard_poll();
         if (!key) continue;
         terminal_cursor(0);
-        if (key == KEY_UP) {
-            if (selected > 0) {
-                --selected;
-                replace_input(line, &len, history[selected]);
-            }
+        if (key == KEY_CTRL_C) {
+            terminal_input_redraw(line, (unsigned)len, (unsigned)len);
+            terminal_write("^C");
+            terminal_newline();
+            len = caret = 0;
+            line[0] = 0;
+            selected = history_size;
+            prompt();
+            terminal_input_begin();
+        } else if (key == KEY_CTRL_L) {
+            terminal_clear();
+            prompt();
+            terminal_input_begin();
+            terminal_input_redraw(line, (unsigned)len, (unsigned)caret);
+        } else if (key == KEY_LEFT) {
+            if (caret) --caret;
+        } else if (key == KEY_RIGHT) {
+            if (caret < len) ++caret;
+        } else if (key == KEY_HOME) {
+            caret = 0;
+        } else if (key == KEY_END) {
+            caret = len;
+        } else if (key == KEY_UP) {
+            if (selected > 0) replace_input(line, &len, &caret, history[--selected]);
         } else if (key == KEY_DOWN) {
             if (selected < history_size) {
                 ++selected;
-                replace_input(line, &len,
+                replace_input(line, &len, &caret,
                     selected == history_size ? "" : history[selected]);
             }
-        } else if (key == '\b') {
-            if (len) { line[--len] = '\0'; terminal_backspace(); }
+        } else if (key == KEY_CTRL_U) {
+            replace_input(line, &len, &caret, "");
+            selected = history_size;
+        } else if (key == KEY_CTRL_W) {
+            size_t start = caret;
+            while (start && line[start - 1] == ' ') --start;
+            while (start && line[start - 1] != ' ') --start;
+            if (start != caret) {
+                size_t removed = caret - start;
+                for (size_t i = start; i + removed <= len; ++i)
+                    line[i] = line[i + removed];
+                len -= removed; caret = start;
+            }
+            selected = history_size;
+        } else if (key == KEY_DELETE || key == '\b') {
+            bool erase = key == KEY_DELETE ? caret < len : caret > 0;
+            if (key == '\b' && caret) --caret;
+            if (erase) {
+                for (size_t i = caret; i < len; ++i) line[i] = line[i + 1];
+                --len;
+            }
+            selected = history_size;
         } else if (key == '\n') {
-            line[len] = '\0';
+            terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_newline();
             normalize(line);
             if (!same(line, "clear history")) save_history(line);
             dispatch(line);
-            len = 0;
-            line[0] = '\0';
+            len = caret = 0;
+            line[0] = 0;
             selected = history_size;
             prompt();
+            terminal_input_begin();
         } else if (key >= 32 && key <= 126 && len < INPUT_LIMIT) {
-            line[len++] = (char)key;
-            line[len] = '\0';
-            terminal_putc_color((char)key, TERMINAL_NORMAL);
+            for (size_t i = len + 1; i > caret; --i) line[i] = line[i - 1];
+            line[caret++] = (char)key;
+            ++len;
             selected = history_size;
         }
+        terminal_input_redraw(line, (unsigned)len, (unsigned)caret);
         terminal_cursor(1);
     }
 }

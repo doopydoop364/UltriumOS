@@ -12,15 +12,23 @@ static inline uint8_t port_in(uint16_t port) {
 int keyboard_poll(void) {
     if (!(port_in(0x64) & 1)) return 0;
     uint8_t code = port_in(0x60);
-    static int left_shift, right_shift, caps_lock, extended;
+    static int left_shift, right_shift, caps_lock, extended, ctrl;
     int shift;
     if (code == 0xe0) { extended = 1; return 0; }
     if (extended) {
         extended = 0;
+        if (code & 0x80) return 0;
+        if (code == 0x4b) return KEY_LEFT;
+        if (code == 0x4d) return KEY_RIGHT;
+        if (code == 0x53) return KEY_DELETE;
+        if (code == 0x47) return KEY_HOME;
+        if (code == 0x4f) return KEY_END;
         if (code == 0x48) return KEY_UP;
         if (code == 0x50) return KEY_DOWN;
         return 0;
     }
+    if (code == 0x1d) { ctrl = 1; return 0; }
+    if (code == 0x9d) { ctrl = 0; return 0; }
     if (code == 0x2a) { left_shift = 1; return 0; }
     if (code == 0x36) { right_shift = 1; return 0; }
     if (code == 0xaa) { left_shift = 0; return 0; }
@@ -28,6 +36,13 @@ int keyboard_poll(void) {
     if (code == 0x3a) { caps_lock = !caps_lock; return 0; }
     shift = left_shift || right_shift;
     if (code & 0x80 || code == 0xe0 || code == 0xe1) return 0;
+    if (ctrl) {
+        if (code == 0x2e) return KEY_CTRL_C;
+        if (code == 0x16) return KEY_CTRL_U;
+        if (code == 0x11) return KEY_CTRL_W;
+        if (code == 0x26) return KEY_CTRL_L;
+        return 0;
+    }
     if (code == 0x1c) return '\n';
     if (code == 0x0e) return '\b';
     if (code == 0x39) return ' ';

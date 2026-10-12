@@ -7,6 +7,8 @@ void terminal_clear(void);
 void terminal_newline(void);
 void terminal_backspace(void);
 void terminal_cursor(int visible);
+void terminal_input_begin(void);
+void terminal_input_redraw(const char *line, unsigned length, unsigned caret);
 void terminal_putc_color(char ch, enum terminal_color color);
 void terminal_write_color(const char *text, enum terminal_color color);
 void terminal_write(const char *text);

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 #include "vmm.h"
 #include "pmm.h"
 static uint64_t offset;
@@ -26,7 +27,7 @@ bool vmm_translate(uint64_t address, uint64_t *physical_address) {
     if (upper != 0 && upper != ~(sign_bit - 1)) return false;
     uint64_t table_phys = cr3 & PHYS_MASK;
     for (int level = levels; level >= 1; --level) {
-        uint64_t *table = (uint64_t *)vmm_direct_map(table_phys);
+        volatile uint64_t *table = (volatile uint64_t *)vmm_direct_map(table_phys);
         if (!table) return false;
         uint64_t index = (address >> (12 + 9 * (level - 1))) & 511;
         uint64_t entry = table[index];
@@ -60,12 +61,12 @@ bool vmm_self_test(void) {
 
 /* v0.1.1: isolated, temporary mapping exercise.
    Never overwrite an existing PML4 entry or expose arbitrary mapping writes. */
-static uint64_t scratch_va, scratch_pdpt, scratch_pd, scratch_pt;
+static uint64_t scratch_va, scratch_pdpt, scratch_pt;
 static uint16_t scratch_slot;
 static bool scratch_ready;
 
 static void zero_table(uint64_t physical) {
-    uint64_t *table = (uint64_t *)vmm_direct_map(physical);
+    volatile uint64_t *table = (volatile uint64_t *)vmm_direct_map(physical);
     for (unsigned i = 0; i < 512; ++i) table[i] = 0;
 }
 static void invalidate(uint64_t va) {
@@ -76,7 +77,7 @@ bool vmm_mapping_init(void) {
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
     if (cr4 & (1ULL << 12)) return false; /* 5-level not yet writable */
-    uint64_t *root = (uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
+    volatile uint64_t *root = (volatile uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
     if (!root || scratch_ready) return false;
     unsigned index = 256;
     while (index < 511 && (root[index] & PRESENT)) ++index;
@@ -91,30 +92,36 @@ bool vmm_mapping_init(void) {
         return false;
     }
     zero_table(a); zero_table(b); zero_table(c);
-    uint64_t *pdpt = (uint64_t *)vmm_direct_map(a);
-    uint64_t *pd = (uint64_t *)vmm_direct_map(b);
+    volatile uint64_t *pdpt = (volatile uint64_t *)vmm_direct_map(a);
+    volatile uint64_t *pd = (volatile uint64_t *)vmm_direct_map(b);
     pdpt[0] = b | 3;
     pd[0] = c | 3;
     /* PML4 upper entries sign extend to 64 bits. */
     uint64_t va = 0xffff000000000000ULL | ((uint64_t)index << 39);
     root[index] = a | 3;
     scratch_va = va;
-    scratch_pdpt = a; scratch_pd = b; scratch_pt = c;
+    scratch_pdpt = a; scratch_pt = c;
     scratch_slot = (uint16_t)index;
     scratch_ready = true;
     return true;
 }
+static unsigned test_error;
 bool vmm_map_test(void) {
-    if (!scratch_ready) return false;
+    test_error = 0;
+    if (!scratch_ready) { test_error = 1; return false; }
     uint64_t cr3;
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-    uint64_t *root = (uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
-    uint64_t *pt = (uint64_t *)vmm_direct_map(scratch_pt);
-    if (!root || !pt || root[scratch_slot] != (scratch_pdpt | 3) ||
-        pt[0] != 0) return false;
+    volatile uint64_t *root = (volatile uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
+    volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
+    if (!root || !pt) { test_error = 2; return false; }
+    /* The CPU sets Accessed on upper-level entries during address walks. */
+    if ((root[scratch_slot] & (PHYS_MASK | 3ULL)) != (scratch_pdpt | 3)) {
+        test_error = 8; return false;
+    }
+    if (pt[0] != 0) { test_error = 9; return false; }
     uint64_t before = pmm_free_pages();
     uint64_t page = pmm_alloc_page();
-    if (!page) return false;
+    if (!page) { test_error = 3; return false; }
     bool ok = false;
     pt[0] = page | 3; /* writable kernel-only scratch mapping */
     invalidate(scratch_va);
@@ -126,9 +133,93 @@ bool vmm_map_test(void) {
         alias[29] = 0x6b;
         ok = direct[29] == 0x6b;
     }
+    if (!ok) test_error = 4;
     pt[0] = 0;
     invalidate(scratch_va);
-    if (vmm_translate(scratch_va, &translated)) ok = false;
-    if (!pmm_free_page(page)) ok = false;
-    return ok && pmm_free_pages() == before;
+    if (vmm_translate(scratch_va, &translated)) { test_error = 5; ok = false; }
+    if (!pmm_free_page(page)) { test_error = 6; ok = false; }
+    if (pmm_free_pages() != before) { test_error = 7; ok = false; }
+    return ok;
+}
+
+/* Managed pages occupy scratch PT slots 1..32; slot 0 remains reserved
+   for the earlier temporary mapping test. Single-core only. */
+#define MANAGED_SLOTS 32
+static uint64_t managed_physical[MANAGED_SLOTS];
+static uint64_t managed_live_count;
+unsigned vmm_test_error(void) { return test_error; }
+void *vmm_managed_alloc(void) {
+    if (!scratch_ready) return (void *)0;
+    volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
+    if (!pt) return (void *)0;
+    for (unsigned i = 0; i < MANAGED_SLOTS; ++i) {
+        if (managed_physical[i] || pt[i + 1] != 0) continue;
+        uint64_t physical = pmm_alloc_page();
+        if (!physical) return (void *)0;
+        uint64_t virtual_address = scratch_va + (uint64_t)(i + 1) * 4096;
+        pt[i + 1] = physical | 3;
+        invalidate(virtual_address);
+        managed_physical[i] = physical;
+        ++managed_live_count;
+        uint8_t *data = (uint8_t *)(uintptr_t)virtual_address;
+        for (size_t byte = 0; byte < 4096; ++byte) data[byte] = 0;
+        return data;
+    }
+    return (void *)0;
+}
+bool vmm_managed_free(void *address) {
+    if (!scratch_ready || !address) return false;
+    uint64_t va = (uint64_t)(uintptr_t)address;
+    if (va <= scratch_va || va >= scratch_va + 33ULL * 4096 ||
+        ((va - scratch_va) & 4095)) return false;
+    unsigned slot = (unsigned)((va - scratch_va) / 4096 - 1);
+    uint64_t physical = managed_physical[slot];
+    if (!physical) return false;
+    volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
+    /* The CPU may set Accessed (bit 5) and Dirty (bit 6) on a leaf. */
+    if (!pt || (pt[slot + 1] & (PHYS_MASK | 3ULL)) != (physical | 3))
+        return false;
+    /* Drop the alias and invalidate before returning the frame to the PMM. */
+    pt[slot + 1] = 0;
+    invalidate(va);
+    if (!pmm_free_page(physical)) return false;
+    managed_physical[slot] = 0;
+    --managed_live_count;
+    return true;
+}
+uint64_t vmm_managed_live(void) { return managed_live_count; }
+bool vmm_managed_test(void) {
+    test_error = 0;
+    if (!scratch_ready || managed_live_count) { test_error = 11; return false; }
+    uint64_t before = pmm_free_pages();
+    void *pages[8] = {0};
+    bool ok = true;
+    for (unsigned i = 0; i < 8; ++i) {
+        pages[i] = vmm_managed_alloc();
+        if (!pages[i]) { test_error = 12; ok = false; break; }
+        uint8_t *bytes = (uint8_t *)pages[i];
+        if (bytes[0] != 0 || bytes[4095] != 0) { test_error = 13; ok = false; }
+        bytes[0] = (uint8_t)(0x30 + i);
+        bytes[4095] = (uint8_t)(0x80 + i);
+    }
+    for (unsigned i = 0; i < 8; ++i) {
+        if (!pages[i]) continue;
+        uint8_t *bytes = (uint8_t *)pages[i];
+        uint64_t physical;
+        if (bytes[0] != (uint8_t)(0x30 + i) ||
+            bytes[4095] != (uint8_t)(0x80 + i) ||
+            !vmm_translate((uint64_t)(uintptr_t)pages[i], &physical) ||
+            physical != managed_physical[i]) { test_error = 14; ok = false; }
+    }
+    for (unsigned i = 0; i < 8; ++i)
+        if (pages[i] && !vmm_managed_free(pages[i])) { test_error = 15; ok = false; }
+    if (managed_live_count != 0 || pmm_free_pages() != before) { test_error = 16; ok = false; }
+    uint64_t ignored;
+    for (unsigned i = 0; i < 8; ++i) {
+        if (!pages[i]) continue;
+        volatile uint64_t *pt = (volatile uint64_t *)vmm_direct_map(scratch_pt);
+        if (!pt || pt[i + 1] != 0) { test_error = 18; ok = false; }
+        if (vmm_translate((uint64_t)(uintptr_t)pages[i], &ignored)) { test_error = 17; ok = false; }
+    }
+    return ok;
 }
