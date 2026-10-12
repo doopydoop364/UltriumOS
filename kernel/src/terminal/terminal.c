@@ -134,7 +134,8 @@ void terminal_putc_color(char ch, enum terminal_color color) {
     if (cursor_x + 5 * SCALE + MARGIN > screen->width) terminal_newline();
     uint32_t selected = color == TERMINAL_ACCENT ? accent :
                         color == TERMINAL_MUTED ? muted : ink;
-    draw_text(screen, (char[]){ch, '\0'}, cursor_x, cursor_y, SCALE, selected);
+    char display = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+    draw_text(screen, (char[]){display, '\0'}, cursor_x, cursor_y, SCALE, selected);
     cursor_x += ADVANCE;
 }
 
