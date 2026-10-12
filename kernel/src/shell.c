@@ -37,7 +37,7 @@ static void help(void) {
     terminal_write("  clear       Clear commands (clear help)\n");
     terminal_write("General commands:\n");
     terminal_write("  help, reboot\n");
-    terminal_write("Shortcuts: Ctrl+C cancel, Ctrl+U clear line, Ctrl+W delete word, Ctrl+L clear screen\n");
+    terminal_write("Shortcuts: Left/Right, Home/End, Delete, Ctrl+C/U/W/L\n");
 }
 static void clear_help(void) {
     terminal_write("Clear commands:\n");
@@ -291,9 +291,9 @@ void shell_run(void) {
             }
             selected = history_size;
         } else if (key == KEY_DELETE || key == '\b') {
+            bool erase = key == KEY_DELETE ? caret < len : caret > 0;
             if (key == '\b' && caret) --caret;
-            else if (key == '\b') { /* nothing before caret */ }
-            if (caret < len && (key == KEY_DELETE || key == '\b')) {
+            if (erase) {
                 for (size_t i = caret; i < len; ++i) line[i] = line[i + 1];
                 --len;
             }
