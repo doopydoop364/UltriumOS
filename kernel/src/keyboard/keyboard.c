@@ -17,6 +17,12 @@ int keyboard_poll(void) {
     if (code == 0xe0) { extended = 1; return 0; }
     if (extended) {
         extended = 0;
+        if (code & 0x80) return 0;
+        if (code == 0x4b) return KEY_LEFT;
+        if (code == 0x4d) return KEY_RIGHT;
+        if (code == 0x53) return KEY_DELETE;
+        if (code == 0x47) return KEY_HOME;
+        if (code == 0x4f) return KEY_END;
         if (code == 0x48) return KEY_UP;
         if (code == 0x50) return KEY_DOWN;
         return 0;
