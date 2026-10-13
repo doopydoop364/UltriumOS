@@ -1,14 +1,38 @@
-# Ultrium OS 0.1.0 — CPU exception diagnostics
+# CPU exception handling
 
-The first 32 x86-64 exception vectors are installed in a 256-entry Interrupt Descriptor Table (IDT) using the current kernel code segment. The boot sequence installs this IDT before initializing the memory subsystem.
+Ultrium installs exception gates for vectors 0–31 and uses a private flat
+kernel GDT. The GDT includes a 64-bit TSS descriptor; the kernel loads it into
+TR during exception initialization. The TSS has a statically reserved,
+16 KiB, 16-byte-aligned emergency stack for the double-fault gate (IST1).
+Static storage is used because exception initialization happens before the PMM
+and heap are available. The stack is kernel image storage and is never passed
+to the physical allocator.
 
-When an exception occurs, the handler prints the vector number, CPU error code, and instruction pointer. Page faults also display CR2 (the faulting virtual address). The kernel then halts: recovery is not supported.
+The fatal exception path reports the exception name, vector, error code, RIP,
+CS, and RFLAGS. Page faults also report CR2 and the architectural error bits.
+It disables interrupts and halts; recovery is not supported. `ultrium system
+exceptions` reports IDT initialization. The kernel test suite checks that TR
+contains the expected TSS selector and that vector 8 selects IST1. This check
+validates descriptor setup without intentionally faulting the kernel.
 
-The non-destructive command `ultrium system exceptions` reports whether the IDT was installed. There is deliberately **no command that triggers a page fault**.
+## Limits and safety
 
-## Scope and safety limitations
-- Kernel-only, single CPU, no user-mode transitions, no interrupt-service routines (ISRs) for devices, and external interrupts remain disabled.
-- No dedicated emergency exception stacks (IST/TSS). Stack corruption or double faults may still cause a triple fault/reboot without a diagnostic.
-- No attempt to recover from exceptions or return from the fatal exception stub.
-- This creates a diagnostic prerequisite for later controlled page-table changes; **page mappings cannot yet be edited**.
-- Must be boot tested in QEMU before merging. Check that the shell and existing memory tests still work.
+- Kernel-only, single CPU, and no privilege-level transitions. RSP0 is not yet
+  used for entering from user mode.
+- Only double faults use an emergency IST stack. NMI and machine-check stacks
+  remain future work.
+- Exception reporting still uses the framebuffer terminal. A fault inside the
+  terminal path, a corrupted GDT/IDT, or failure of the emergency stack can
+  still lead to a triple fault.
+- The test suite does not force a double fault. Validating that delivery path
+  needs an isolated QEMU fault-test configuration with an expected halt and
+  timeout.
+- External interrupts remain disabled; device IRQ routing and scheduling are
+  not implemented.
+
+Build and test with:
+
+```sh
+make TOOLCHAIN=llvm
+python3 tools/qemu-memory-test.py 'ultrium test all'
+```

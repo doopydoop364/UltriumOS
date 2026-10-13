@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     command_text = sys.argv[1] if len(sys.argv) > 1 else "ultrium test memory"
-    expected_count = 1 if command_text == "ultrium system memory test" else 13
+    expected_count = 1 if command_text == "ultrium system memory test" else 14
     if command_text not in ("ultrium test memory", "ultrium test all",
                             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")

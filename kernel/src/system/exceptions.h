@@ -3,4 +3,5 @@
 #include <stdbool.h>
 bool exceptions_init(void);
 bool exceptions_ready(void);
+bool exceptions_self_test(void);
 #endif

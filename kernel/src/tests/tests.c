@@ -7,6 +7,7 @@
 #include "memory/heap.h"
 #include "memory/vmm.h"
 #include "memory/vmm_test.h"
+#include "system/exceptions.h"
 
 /* COM1 is only used for test results. A missing UART never blocks the CLI. */
 static bool serial_ready;
@@ -47,6 +48,9 @@ static void report_number(uint64_t value) {
 typedef const char *(*test_fn)(void);
 struct test_case { const char *name; test_fn run; };
 static const char *physical_self(void) { return pmm_self_test() ? 0 : "PMM self-test failed"; }
+static const char *exception_descriptors(void) {
+    return exceptions_self_test() ? 0 : "TSS, task register, or double-fault IST invalid";
+}
 static const char *physical_ownership(void) {
     uint64_t before = pmm_free_pages();
     struct pmm_page_handle owner = {0}, stale, forged;
@@ -478,6 +482,7 @@ static const char *page_permissions(void) {
 }
 
 static const struct test_case memory_cases[] = {
+    {"exception TSS/IST", exception_descriptors},
     {"physical self", physical_self}, {"physical ownership", physical_ownership},
     {"physical exhaustion", physical_exhaustion}, {"physical edges", physical_edges},
     {"heap self", heap_self}, {"heap edges", heap_edges},
@@ -506,4 +511,7 @@ static void run(const struct test_case *cases, size_t count) {
 }
 void kernel_tests_memory(void) { run(memory_cases, sizeof(memory_cases)/sizeof(memory_cases[0])); }
 void kernel_tests_all(void) { kernel_tests_memory(); }
-void kernel_test_slab_stress(void) { run(&memory_cases[4], 1); }
+void kernel_test_slab_stress(void) {
+    const struct test_case legacy_slab_case = {"slab stress", slab_stress};
+    run(&legacy_slab_case, 1);
+}
