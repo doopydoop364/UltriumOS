@@ -15,9 +15,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     command_text = sys.argv[1] if len(sys.argv) > 1 else "ultrium test memory"
+    keyboard_regression = command_text == "--keyboard-regression"
     expected_count = 1 if command_text == "ultrium system memory test" else 13
-    if command_text not in ("ultrium test memory", "ultrium test all",
-                            "ultrium system memory test"):
+    if not keyboard_regression and command_text not in (
+            "ultrium test memory", "ultrium test all", "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
         qmp_path = os.path.join(temporary, "qmp.sock")
@@ -76,24 +77,90 @@ def main():
             selector = selectors.DefaultSelector()
             selector.register(process.stdout, selectors.EVENT_READ)
             output = bytearray()
-            expected = "TEST SUMMARY passed=" + str(expected_count) + " failed=0"
-            # Repeat in one boot so allocator accounting and ownership cleanup
-            # are checked against the prior run's resulting state.
-            for repetition in range(2):
-                for key in command_text:
-                    qmp({"execute": "human-monitor-command",
-                         "arguments": {"command-line": "sendkey " + ("spc" if key == " " else key)}})
-                    time.sleep(.04)
-                qmp({"execute": "human-monitor-command",
-                     "arguments": {"command-line": "sendkey ret"}})
+
+            def wait_for_summary(summary, count):
                 deadline = time.monotonic() + 30
-                while output.decode(errors="replace").count(expected) < repetition + 1 and time.monotonic() < deadline:
+                while output.decode(errors="replace").count(summary) < count and time.monotonic() < deadline:
                     for key, _ in selector.select(.5):
                         chunk = os.read(key.fileobj.fileno(), 4096)
                         if chunk:
                             output.extend(chunk)
                         elif process.poll() is not None:
                             break
+                if output.decode(errors="replace").count(summary) < count:
+                    tail = output.decode(errors="replace")[-2000:]
+                    raise RuntimeError("timed out waiting for " + repr(summary) +
+                                       " occurrence " + str(count) + "; serial output tail:\n" + tail)
+
+            def send_key(key):
+                qmp({"execute": "human-monitor-command",
+                     "arguments": {"command-line": "sendkey " + key + " 20"}})
+                time.sleep(.035)
+
+            def type_text(value):
+                for character in value:
+                    send_key("spc" if character == " " else character)
+
+            if keyboard_regression:
+                summary = "TEST SUMMARY passed=1 failed=0"
+                edited_command = "ultrium system memory test"
+
+                # Correct a deliberate typo with Home/End, Left/Right,
+                # insertion, Backspace and forward Delete.
+                type_text("ultrium system memorry test")
+                for key in ("home", "right", "left", "end"):
+                    send_key(key)
+                for _ in range(6):
+                    send_key("left")
+                send_key("backspace")
+                send_key("r")
+                send_key("delete")
+                send_key("y")
+                send_key("left")
+                send_key("backspace")
+                send_key("ret")
+                wait_for_summary(summary, 1)
+
+                # Up must restore the previous command and execute it again.
+                send_key("up")
+                send_key("ret")
+                wait_for_summary(summary, 2)
+
+                type_text("discard")
+                send_key("ctrl-c")
+                type_text(edited_command)
+                send_key("ret")
+                wait_for_summary(summary, 3)
+
+                type_text("discard")
+                send_key("ctrl-u")
+                type_text(edited_command)
+                send_key("ret")
+                wait_for_summary(summary, 4)
+
+                type_text(edited_command + " discard")
+                send_key("ctrl-w")
+                send_key("ret")
+                wait_for_summary(summary, 5)
+
+                type_text(edited_command)
+                send_key("ctrl-l")
+                send_key("ret")
+                wait_for_summary(summary, 6)
+
+                decoded = output.decode(errors="replace")
+                print(decoded, end="")
+                if decoded.count(summary) != 6:
+                    raise RuntimeError("keyboard regression did not execute all six test commands")
+                return 0
+
+            expected = "TEST SUMMARY passed=" + str(expected_count) + " failed=0"
+            # Repeat in one boot so allocator accounting and ownership cleanup
+            # are checked against the prior run's resulting state.
+            for repetition in range(2):
+                type_text(command_text)
+                send_key("ret")
+                wait_for_summary(expected, repetition + 1)
             decoded = output.decode(errors="replace")
             print(decoded, end="")
             if decoded.count(expected) != 2:

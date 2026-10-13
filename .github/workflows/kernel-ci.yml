@@ -33,3 +33,6 @@ jobs:
 
       - name: Run legacy memory command twice in QEMU
         run: python3 tools/qemu-memory-test.py 'ultrium system memory test'
+
+      - name: Run shell and keyboard editing regression in QEMU
+        run: python3 tools/qemu-memory-test.py --keyboard-regression
