@@ -1,10 +1,10 @@
-# Ultrium OS v0.2.0 — Kernel virtual memory architecture
+# Ultrium OS v0.4.0 — Kernel virtual memory architecture
 
 ## Boot mappings and current page tables
 
 Limine enters `kmain` with paging enabled and supplies the HHDM offset. Ultrium keeps that active CR3 and uses the HHDM to reach physical pages. `vmm_translate` reads CR3/CR4 and walks the active 4- or 5-level tables, including 2 MiB and 1 GiB leaves. Mapping changes currently require four-level paging; `vmm_mapping_init` rejects CR4.LA57 because it does not build a PML5 path.
 
-The VMM reads CR3/CR4; this prototype does not install a new address space. The PMM supplies page-aligned physical frames, and page-table memory is zeroed and accessed through the HHDM. The VMM's active page-table frames therefore remain accessible while the window is used.
+The VMM reads CR3/CR4; this prototype does not install a new address space. The PMM supplies generation-bearing ownership handles for page-aligned frames. VMM metadata retains handles for owned backing frames and page-table frames; PTEs and HHDM pointers contain only borrowed physical addresses. The Limine root and pre-existing boot tables are borrowed and never returned to PMM. Page-table memory is zeroed and accessed through the HHDM.
 
 ```text
 Limine CR3
@@ -28,7 +28,7 @@ The manager has static metadata for at most 64 live allocations and 4096 virtual
 
 `vmm_free_pages(address)` accepts only the exact base of a live allocation. It validates all recorded leaf mappings before unmapping any page, clears each PTE and invalidates its address, then returns the owned frames. Empty dynamically-created PTs are detached and returned to PMM; the pre-existing PT at directory index 0 is retained. Invalid pointers, interior pointers, borrowed pages, and duplicate frees are rejected.
 
-The manager is single-CPU and non-concurrent. It does not provide guard pages, create process address spaces, support 5-level writable mappings, or reclaim the initial scratch tables. It assumes no other subsystem writes inside the selected PML4 slot. MMIO and user mappings are outside this API. Read-only and NX bits protect the mapped alias; kernel code can still reach the same physical frame through the Limine HHDM, so these permissions are not a security boundary between kernel subsystems.
+The manager is single-CPU and non-concurrent. It does not provide guard pages, create process address spaces, support 5-level writable mappings, or reclaim the initial scratch tables. It assumes no other subsystem writes inside the selected PML4 slot. MMIO and user mappings are outside this API. Read-only and NX bits protect the mapped alias; kernel code can still reach the same physical frame through the Limine HHDM, so these permissions are not a security boundary between kernel subsystems. See [physical memory ownership](physical-memory.md) for metadata cost, generation exhaustion, and the move-only-by-convention handle contract.
 
 ## Diagnostics and validation
 

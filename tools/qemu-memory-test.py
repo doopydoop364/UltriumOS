@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     command_text = sys.argv[1] if len(sys.argv) > 1 else "ultrium test memory"
-    expected_count = 1 if command_text == "ultrium system memory test" else 11
+    expected_count = 1 if command_text == "ultrium system memory test" else 13
     if command_text not in ("ultrium test memory", "ultrium test all",
                             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
@@ -56,28 +56,31 @@ def main():
             qmp({"execute": "qmp_capabilities"})
             # Limine's default timeout is three seconds. Allow for firmware boot.
             time.sleep(7)
-            for key in command_text:
-                qmp({"execute": "human-monitor-command",
-                     "arguments": {"command-line": "sendkey " + ("spc" if key == " " else key)}})
-                time.sleep(.04)
-            qmp({"execute": "human-monitor-command",
-                 "arguments": {"command-line": "sendkey ret"}})
             selector = selectors.DefaultSelector()
             selector.register(process.stdout, selectors.EVENT_READ)
             output = bytearray()
-            deadline = time.monotonic() + 20
             expected = "TEST SUMMARY passed=" + str(expected_count) + " failed=0"
-            while expected.encode() not in output and time.monotonic() < deadline:
-                for key, _ in selector.select(.5):
-                    chunk = os.read(key.fileobj.fileno(), 4096)
-                    if chunk:
-                        output.extend(chunk)
-                    elif process.poll() is not None:
-                        break
+            # Repeat in one boot so allocator accounting and ownership cleanup
+            # are checked against the prior run's resulting state.
+            for repetition in range(2):
+                for key in command_text:
+                    qmp({"execute": "human-monitor-command",
+                         "arguments": {"command-line": "sendkey " + ("spc" if key == " " else key)}})
+                    time.sleep(.04)
+                qmp({"execute": "human-monitor-command",
+                     "arguments": {"command-line": "sendkey ret"}})
+                deadline = time.monotonic() + 30
+                while output.decode(errors="replace").count(expected) < repetition + 1 and time.monotonic() < deadline:
+                    for key, _ in selector.select(.5):
+                        chunk = os.read(key.fileobj.fileno(), 4096)
+                        if chunk:
+                            output.extend(chunk)
+                        elif process.poll() is not None:
+                            break
             decoded = output.decode(errors="replace")
             print(decoded, end="")
-            if expected not in decoded:
-                raise RuntimeError("expected passing memory tests on COM1")
+            if decoded.count(expected) != 2:
+                raise RuntimeError("expected two passing memory-test summaries on COM1")
             return 0
         finally:
             process.terminate()

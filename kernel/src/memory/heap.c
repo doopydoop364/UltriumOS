@@ -13,7 +13,7 @@
 static const uint16_t sizes[] = {16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
 #define CLASS_COUNT (sizeof(sizes) / sizeof(sizes[0]))
 struct slab {
-    uint64_t physical;
+    struct pmm_page_handle owner;
     uint8_t *base;
     uint64_t used[BITMAP_WORDS];
     uint16_t block_size;
@@ -25,6 +25,7 @@ static uint64_t live;
 static bool initialized;
 
 bool heap_init(void) {
+    if (initialized && live) return false;
     for (size_t i = 0; i < MAX_SLABS; ++i) {
         slabs[i] = (struct slab){0};
     }
@@ -55,18 +56,20 @@ void *kmalloc(size_t bytes) {
     }
     for (size_t i = 0; i < MAX_SLABS; ++i)
         if (slabs[i].base && slabs[i].block_size == size &&
-            slabs[i].active < slabs[i].blocks)
+            slabs[i].active < slabs[i].blocks &&
+            pmm_page_handle_valid(&slabs[i].owner))
             return use_slot(&slabs[i]);
     for (size_t i = 0; i < MAX_SLABS; ++i) {
         if (slabs[i].base) continue;
-        uint64_t physical = pmm_alloc_page();
-        if (!physical) return (void *)0;
-        uint8_t *base = (uint8_t *)vmm_direct_map(physical);
-        if (!base) { pmm_free_page(physical); return (void *)0; }
+        struct pmm_page_handle owner = {0};
+        if (!pmm_page_alloc(&owner)) return (void *)0;
+        uint8_t *base = (uint8_t *)vmm_direct_map(owner.physical);
+        if (!base) { pmm_page_release(&owner); return (void *)0; }
         slabs[i] = (struct slab){
-            .physical = physical, .base = base, .block_size = size,
+            .owner = owner, .base = base, .block_size = size,
             .blocks = PAGE_BYTES / size, .active = 0
         };
+        owner = (struct pmm_page_handle){0};
         return use_slot(&slabs[i]);
     }
     return (void *)0;
@@ -79,6 +82,7 @@ void kfree(void *pointer) {
         if (!s->base) continue;
         uintptr_t begin = (uintptr_t)s->base;
         if (target < begin || target - begin >= PAGE_BYTES) continue;
+        if (!pmm_page_handle_valid(&s->owner)) return;
         size_t offset = target - begin;
         if (offset % s->block_size) return;
         size_t index = offset / s->block_size;
@@ -89,9 +93,8 @@ void kfree(void *pointer) {
         --s->active;
         --live;
         if (!s->active) {
-            uint64_t physical = s->physical;
-            /* PMM normally accepts this address; do not drop tracking on failure. */
-            if (pmm_free_page(physical)) *s = (struct slab){0};
+            /* Keep the slab descriptor if releasing its owned frame fails. */
+            if (pmm_page_release(&s->owner)) *s = (struct slab){0};
         }
         return;
     }

@@ -1,4 +1,4 @@
-# Ultrium OS v0.3.0 — Kernel mapping permissions
+# Ultrium OS v0.4.0 — Kernel mapping permissions
 
 ## Model
 
