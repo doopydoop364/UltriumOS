@@ -52,7 +52,11 @@ def main():
                             time.monotonic() >= connect_deadline:
                         raise
                     if process.poll() is not None:
-                        raise RuntimeError("QEMU exited before QMP became ready") from error
+                        stderr = process.stderr.read().decode(errors="replace")
+                        raise RuntimeError(
+                            "QEMU exited before QMP became ready (status " +
+                            str(process.returncode) + "): " + stderr
+                        ) from error
                     time.sleep(.05)
             stream = monitor.makefile("rwb", buffering=0)
             stream.readline()
