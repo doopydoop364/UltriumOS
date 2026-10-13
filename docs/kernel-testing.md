@@ -28,6 +28,13 @@ python3 tools/qemu-memory-test.py --keyboard-regression
 make run TOOLCHAIN=llvm
 ```
 
+GitHub Actions runs the LLVM build and ISO packaging, then runs `ultrium test all`,
+the legacy memory command, and the shell/keyboard regression. The workflow is in
+`.github/workflows/kernel-ci.yml`. It uses Ubuntu 24.04 and downloads Limine and
+OVMF release assets through existing Makefile targets; those upstream release
+downloads are not pinned by the workflow. A local passing run does not imply
+that GitHub Actions has run or passed; check the PR's checks for the hosted result.
+
 The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice through QMP keyboard events, reads COM1, and requires two passing summaries in the same boot. In the interrupt-enabled Q35 configuration, this exercises the PS/2 IRQ queue as well as repeated memory cleanup and timer IRQs. `ultrium test interrupts` reports both timer and PS/2 IRQ readiness. The optional `--keyboard-regression` mode edits a command using Home/End, Left/Right, insertion, Backspace and Delete, replays it with Up history, and verifies that Ctrl+C, Ctrl+U, Ctrl+W and Ctrl+L still allow a known test command to execute. Each command must produce its expected COM1 test summary. This test works on the polling-keyboard baseline as well as the later IRQ-backed driver. QEMU must permit a local Unix QMP socket. QMP startup retries are bounded, and the script reports QEMU startup diagnostics. In the interactive QEMU session, check the nested help menus, memory and interrupt status, keyboard editing/history, and mapping commands. These visual interactions are not covered by the serial script.
 
 ## Audit and limits
