@@ -41,6 +41,7 @@ enum vfs_error vfs_create_file(const char *absolute_path);
 enum vfs_error vfs_create_directory(const char *absolute_path);
 enum vfs_error vfs_unlink(const char *absolute_path);
 bool vfs_is_directory(const char *absolute_path);
+/* Open output tokens must be zero-initialized and empty. */
 enum vfs_error vfs_file_open(const char *absolute_path, uint32_t flags,
                              struct vfs_file *out);
 enum vfs_error vfs_file_close(struct vfs_file *file);

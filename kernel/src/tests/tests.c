@@ -533,6 +533,9 @@ static const char *filesystem_file_io(void) {
     if (vfs_file_open("/vfs-test/data", VFS_OPEN_READ | VFS_OPEN_WRITE, &file) != VFS_OK) {
         error = "read/write open failed"; goto cleanup;
     }
+    if (vfs_file_open("/vfs-test/data", VFS_OPEN_READ, &file) != VFS_BAD_HANDLE) {
+        error = "open overwrote a live file handle"; goto cleanup;
+    }
     if (vfs_unlink("/vfs-test/data") != VFS_UNSUPPORTED) {
         error = "open file deletion was not rejected"; goto cleanup;
     }
@@ -590,6 +593,9 @@ static const char *filesystem_directory_iteration(void) {
         error = "listing children creation failed"; goto cleanup;
     }
     if (vfs_dir_open("/vfs-list", &dir) != VFS_OK) { error = "directory open failed"; goto cleanup; }
+    if (vfs_dir_open("/vfs-list", &dir) != VFS_BAD_HANDLE) {
+        error = "open overwrote a live directory handle"; goto cleanup;
+    }
     if (vfs_unlink("/vfs-list") != VFS_UNSUPPORTED) {
         error = "open directory removal was not rejected"; goto cleanup;
     }

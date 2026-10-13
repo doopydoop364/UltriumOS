@@ -241,6 +241,7 @@ static enum vfs_error ramfs_unlink(const char *path) {
 static enum vfs_error ramfs_file_open(const char *path, uint32_t flags,
                                       struct vfs_file *out) {
     if (!out) return VFS_BAD_HANDLE;
+    if (out->slot || out->generation) return VFS_BAD_HANDLE;
     out->slot = out->generation = 0;
     if (!flags || (flags & ~(VFS_OPEN_READ | VFS_OPEN_WRITE))) return VFS_BAD_HANDLE;
     struct vfs_node *node;
@@ -319,6 +320,7 @@ static enum vfs_error ramfs_file_write(struct vfs_file *file, const void *buffer
 
 static enum vfs_error ramfs_dir_open(const char *path, struct vfs_dir *out) {
     if (!out) return VFS_BAD_HANDLE;
+    if (out->slot || out->generation) return VFS_BAD_HANDLE;
     out->slot = out->generation = 0;
     struct vfs_node *node;
     enum vfs_error error = resolve(path, &node);
