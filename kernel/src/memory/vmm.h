@@ -17,6 +17,11 @@ bool vmm_managed_test(void);
 unsigned vmm_test_error(void);
 
 #define VMM_REGION_MAX_PAGES 4096U
+enum vmm_page_permissions {
+    VMM_PAGE_READ = 1U,
+    VMM_PAGE_WRITE = 2U,
+    VMM_PAGE_EXECUTE = 4U
+};
 /* Region allocations own their physical frames and return a zeroed contiguous
    virtual span. Free only the exact pointer returned by the allocator. */
 struct vmm_region_stats {
@@ -28,6 +33,10 @@ struct vmm_region_stats {
 };
 /* Single-CPU kernel-only allocator. count must be 1..VMM_REGION_MAX_PAGES. */
 void *vmm_alloc_pages(size_t count);
+void *vmm_alloc_pages_with_permissions(size_t count, uint32_t permissions);
 bool vmm_free_pages(void *address);
+bool vmm_set_pages_permissions(void *address, uint32_t permissions);
+bool vmm_get_page_permissions(const void *address, uint32_t *permissions);
+bool vmm_page_protection_ready(void);
 bool vmm_region_stats_get(struct vmm_region_stats *stats);
 #endif

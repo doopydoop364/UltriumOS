@@ -16,6 +16,11 @@ uint64_t vmm_direct_offset(void) { return offset; }
 #define PRESENT 1ULL
 #define LARGE_PAGE (1ULL << 7)
 #define PHYS_MASK 0x000ffffffffff000ULL
+#define WRITABLE (1ULL << 1)
+#define NX (1ULL << 63)
+#define EFER_MSR 0xc0000080U
+#define EFER_NXE (1ULL << 11)
+#define CR0_WP (1ULL << 16)
 bool vmm_translate(uint64_t address, uint64_t *physical_address) {
 #if defined(__x86_64__)
     if (!offset || !physical_address) return false;
@@ -65,6 +70,41 @@ bool vmm_self_test(void) {
 static uint64_t scratch_va, scratch_root, scratch_pdpt, scratch_pd, scratch_pt;
 static uint16_t scratch_slot;
 static bool scratch_ready;
+static bool page_protection_ready;
+
+static bool enable_page_protection(void) {
+#if defined(__x86_64__)
+    uint32_t eax = 0x80000000U, ebx, ecx, edx;
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    uint32_t extended_max = eax;
+    if (extended_max < 0x80000001U) return false;
+    eax = 0x80000001U;
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    if (!(edx & (1U << 20))) return false; /* NX is optional in x86-64. */
+
+    uint32_t low, high;
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(EFER_MSR));
+    uint64_t efer = ((uint64_t)high << 32) | low;
+    if (!(efer & EFER_NXE)) {
+        efer |= EFER_NXE;
+        __asm__ volatile("wrmsr" : : "a"((uint32_t)efer),
+                         "d"((uint32_t)(efer >> 32)), "c"(EFER_MSR) : "memory");
+    }
+    uint64_t cr0;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    if (!(cr0 & CR0_WP)) {
+        cr0 |= CR0_WP;
+        __asm__ volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
+    }
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(EFER_MSR));
+    efer = ((uint64_t)high << 32) | low;
+    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+    page_protection_ready = (efer & EFER_NXE) && (cr0 & CR0_WP);
+    return page_protection_ready;
+#else
+    return false;
+#endif
+}
 
 static void zero_table(uint64_t physical) {
     volatile uint64_t *table = (volatile uint64_t *)vmm_direct_map(physical);
@@ -78,6 +118,7 @@ bool vmm_mapping_init(void) {
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
     __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
     if (cr4 & (1ULL << 12)) return false; /* 5-level not yet writable */
+    if (!enable_page_protection()) return false;
     volatile uint64_t *root = (volatile uint64_t *)vmm_direct_map(cr3 & PHYS_MASK);
     if (!root || scratch_ready) return false;
     unsigned index = 256;
@@ -125,7 +166,7 @@ bool vmm_map_test(void) {
     uint64_t page = pmm_alloc_page();
     if (!page) { test_error = 3; return false; }
     bool ok = false;
-    pt[0] = page | 3; /* writable kernel-only scratch mapping */
+    pt[0] = page | 3 | NX; /* writable kernel-only data mapping */
     invalidate(scratch_va);
     uint64_t translated = 0;
     if (vmm_translate(scratch_va + 29, &translated) &&
@@ -159,7 +200,7 @@ void *vmm_managed_alloc(void) {
         uint64_t physical = pmm_alloc_page();
         if (!physical) return (void *)0;
         uint64_t virtual_address = scratch_va + (uint64_t)(i + 1) * 4096;
-        pt[i + 1] = physical | 3;
+        pt[i + 1] = physical | 3 | NX;
         invalidate(virtual_address);
         managed_physical[i] = physical;
         ++managed_live_count;
@@ -235,7 +276,7 @@ bool vmm_managed_test(void) {
 #define DIRTY (1ULL << 6)
 enum region_page_state { REGION_FREE, REGION_RESERVED, REGION_MAPPED, REGION_ORPHAN };
 enum region_allocation_state { ALLOCATION_FREE, ALLOCATION_BUILDING, ALLOCATION_LIVE, ALLOCATION_ORPHAN };
-struct region_allocation { uint16_t first, count; uint8_t state; };
+struct region_allocation { uint16_t first, count; uint8_t state; uint32_t permissions; };
 static struct region_allocation region_allocations[REGION_MAX_ALLOCS];
 static uint64_t region_frames[VMM_REGION_MAX_PAGES];
 static uint8_t region_page_states[VMM_REGION_MAX_PAGES];
@@ -371,8 +412,23 @@ static void rollback_region(unsigned record, unsigned first, unsigned count,
     else region_allocations[record] = (struct region_allocation){0};
 }
 
-void *vmm_alloc_pages(size_t count) {
+static bool valid_region_permissions(uint32_t permissions) {
+    const uint32_t allowed = VMM_PAGE_READ | VMM_PAGE_WRITE | VMM_PAGE_EXECUTE;
+    return (permissions & VMM_PAGE_READ) && !(permissions & ~allowed) &&
+           (permissions & (VMM_PAGE_WRITE | VMM_PAGE_EXECUTE)) !=
+               (VMM_PAGE_WRITE | VMM_PAGE_EXECUTE);
+}
+
+static uint64_t region_leaf_flags(uint32_t permissions) {
+    uint64_t flags = PRESENT;
+    if (permissions & VMM_PAGE_WRITE) flags |= WRITABLE;
+    if (!(permissions & VMM_PAGE_EXECUTE)) flags |= NX;
+    return flags; /* USER is intentionally never set. */
+}
+
+void *vmm_alloc_pages_with_permissions(size_t count, uint32_t permissions) {
     if (!count || count > VMM_REGION_MAX_PAGES || !scratch_ready ||
+        !page_protection_ready || !valid_region_permissions(permissions) ||
         region_busy) return (void *)0;
     unsigned record = REGION_MAX_ALLOCS;
     for (unsigned i = 0; i < REGION_MAX_ALLOCS; ++i)
@@ -390,7 +446,7 @@ void *vmm_alloc_pages(size_t count) {
     region_busy = true;
     region_allocations[record] = (struct region_allocation){
         .first = (uint16_t)first, .count = (uint16_t)count,
-        .state = ALLOCATION_BUILDING
+        .state = ALLOCATION_BUILDING, .permissions = permissions
     };
     for (unsigned i = 0; i < count; ++i) {
         region_page_states[first + i] = REGION_RESERVED;
@@ -413,6 +469,13 @@ void *vmm_alloc_pages(size_t count) {
         transaction_frames[i] = allocate_backing_page();
         if (!transaction_frames[i]) { ok = false; break; }
     }
+    /* Initialize through Limine's writable direct map before publishing the
+       requested leaf permissions (which may intentionally be read-only). */
+    for (unsigned i = 0; ok && i < count; ++i) {
+        volatile uint8_t *data = (volatile uint8_t *)vmm_direct_map(transaction_frames[i]);
+        if (!data) { ok = false; break; }
+        for (unsigned byte = 0; byte < PAGE_SIZE; ++byte) data[byte] = 0;
+    }
     for (unsigned i = 0; ok && i < count; ++i) {
         volatile uint64_t *leaf = region_leaf(first + i, false, 0);
         if (!leaf || *leaf != 0) ok = false;
@@ -422,7 +485,7 @@ void *vmm_alloc_pages(size_t count) {
     for (unsigned i = 0; ok && i < count; ++i) {
         volatile uint64_t *leaf = region_leaf(first + i, false, 0);
         if (!leaf || *leaf != 0) { ok = false; break; }
-        *leaf = transaction_frames[i] | 3ULL;
+        *leaf = transaction_frames[i] | region_leaf_flags(permissions);
         invalidate(region_va(first + i));
         ++mapped;
     }
@@ -433,8 +496,6 @@ void *vmm_alloc_pages(size_t count) {
     }
 
     for (unsigned i = 0; i < count; ++i) {
-        volatile uint8_t *data = (volatile uint8_t *)(uintptr_t)region_va(first + i);
-        for (unsigned byte = 0; byte < PAGE_SIZE; ++byte) data[byte] = 0;
         region_frames[first + i] = transaction_frames[i];
         transaction_frames[i] = 0;
         region_page_states[first + i] = REGION_MAPPED;
@@ -444,8 +505,14 @@ void *vmm_alloc_pages(size_t count) {
     return (void *)(uintptr_t)region_va(first);
 }
 
-static bool region_leaf_matches(volatile uint64_t *leaf, uint64_t physical) {
-    return leaf && ((*leaf & ~(ACCESSED | DIRTY)) == (physical | 3ULL));
+void *vmm_alloc_pages(size_t count) {
+    return vmm_alloc_pages_with_permissions(count, VMM_PAGE_READ | VMM_PAGE_WRITE);
+}
+
+static bool region_leaf_matches(volatile uint64_t *leaf, uint64_t physical,
+                                uint32_t permissions) {
+    return leaf && ((*leaf & ~(ACCESSED | DIRTY)) ==
+                    (physical | region_leaf_flags(permissions)));
 }
 
 bool vmm_free_pages(void *address) {
@@ -465,7 +532,7 @@ bool vmm_free_pages(void *address) {
         unsigned page = allocation.first + i;
         volatile uint64_t *leaf = region_leaf(page, false, 0);
         if (region_page_states[page] != REGION_MAPPED || !region_frames[page] ||
-            !region_leaf_matches(leaf, region_frames[page])) return false;
+            !region_leaf_matches(leaf, region_frames[page], allocation.permissions)) return false;
     }
     region_busy = true;
     for (unsigned i = 0; i < allocation.count; ++i) {
@@ -495,6 +562,61 @@ bool vmm_free_pages(void *address) {
     region_busy = false;
     return freed_all;
 }
+
+bool vmm_set_pages_permissions(void *address, uint32_t permissions) {
+    if (!address || !scratch_ready || !page_protection_ready || region_busy ||
+        !valid_region_permissions(permissions)) return false;
+    uint64_t va = (uint64_t)(uintptr_t)address;
+    unsigned record = REGION_MAX_ALLOCS;
+    for (unsigned i = 0; i < REGION_MAX_ALLOCS; ++i)
+        if (region_allocations[i].state == ALLOCATION_LIVE &&
+            va == region_va(region_allocations[i].first)) { record = i; break; }
+    if (record == REGION_MAX_ALLOCS) return false;
+    struct region_allocation *allocation = &region_allocations[record];
+    for (unsigned i = 0; i < allocation->count; ++i) {
+        unsigned page = allocation->first + i;
+        volatile uint64_t *leaf = region_leaf(page, false, 0);
+        if (region_page_states[page] != REGION_MAPPED || !region_frames[page] ||
+            !region_leaf_matches(leaf, region_frames[page], allocation->permissions))
+            return false;
+    }
+    region_busy = true;
+    uint64_t clear = WRITABLE | NX;
+    uint64_t set = region_leaf_flags(permissions);
+    for (unsigned i = 0; i < allocation->count; ++i) {
+        unsigned page = allocation->first + i;
+        volatile uint64_t *leaf = region_leaf(page, false, 0);
+        *leaf = (*leaf & ~clear) | set;
+        invalidate(region_va(page));
+    }
+    allocation->permissions = permissions;
+    region_busy = false;
+    return true;
+}
+
+bool vmm_get_page_permissions(const void *address, uint32_t *permissions) {
+    if (!address || !permissions || !scratch_ready || !page_protection_ready ||
+        region_busy) return false;
+    uint64_t va = (uint64_t)(uintptr_t)address;
+    if (va & (PAGE_SIZE - 1)) return false;
+    for (unsigned i = 0; i < REGION_MAX_ALLOCS; ++i) {
+        struct region_allocation *allocation = &region_allocations[i];
+        if (allocation->state != ALLOCATION_LIVE) continue;
+        uint64_t base = region_va(allocation->first);
+        uint64_t bytes = (uint64_t)allocation->count * PAGE_SIZE;
+        if (va < base || va - base >= bytes) continue;
+        unsigned page = allocation->first + (unsigned)((va - base) / PAGE_SIZE);
+        volatile uint64_t *leaf = region_leaf(page, false, 0);
+        if (region_page_states[page] != REGION_MAPPED || !region_frames[page] ||
+            !region_leaf_matches(leaf, region_frames[page], allocation->permissions))
+            return false;
+        *permissions = allocation->permissions;
+        return true;
+    }
+    return false;
+}
+
+bool vmm_page_protection_ready(void) { return page_protection_ready; }
 
 bool vmm_region_stats_get(struct vmm_region_stats *stats) {
     if (!stats) return false;
