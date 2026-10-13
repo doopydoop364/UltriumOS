@@ -18,8 +18,8 @@ def main():
     expected_count = {
         "ultrium system memory test": 1,
         "ultrium test memory": 14,
-        "ultrium test interrupts": 1,
-        "ultrium test all": 15,
+        "ultrium test interrupts": 2,
+        "ultrium test all": 16,
     }.get(command_text)
     if command_text not in ("ultrium test memory", "ultrium test all",
                             "ultrium test interrupts", "ultrium system memory test"):

@@ -9,6 +9,7 @@
 #include "memory/vmm_test.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
+#include "keyboard/keyboard.h"
 
 /* COM1 is only used for test results. A missing UART never blocks the CLI. */
 static bool serial_ready;
@@ -58,6 +59,10 @@ static const char *timer_interrupt(void) {
     report_number(interrupts_test_status());
     report("\n");
     return "PIT IRQ0 did not advance the system tick";
+}
+static const char *keyboard_interrupt(void) {
+    if (!keyboard_interrupt_input()) return "PS/2 IRQ1 input was not enabled";
+    return keyboard_dropped_scancodes() ? "PS/2 scancode queue overflowed" : 0;
 }
 static const char *physical_ownership(void) {
     uint64_t before = pmm_free_pages();
@@ -500,7 +505,8 @@ static const struct test_case memory_cases[] = {
     {"VM permissions", page_permissions}
 };
 static const struct test_case interrupt_cases[] = {
-    {"periodic timer IRQ", timer_interrupt}
+    {"periodic timer IRQ", timer_interrupt},
+    {"PS/2 keyboard IRQ", keyboard_interrupt}
 };
 static void run_groups(const struct test_case *const *groups,
                        const size_t *counts, size_t group_count) {
