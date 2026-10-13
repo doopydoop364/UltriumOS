@@ -5,9 +5,38 @@
 #include "terminal/terminal.h"
 struct gate { uint16_t low, selector; uint8_t ist, flags; uint16_t middle; uint32_t high, zero; } __attribute__((packed));
 struct idtr { uint16_t limit; uint64_t base; } __attribute__((packed));
+struct gdtr { uint16_t limit; uint64_t base; } __attribute__((packed));
+struct tss64 {
+    uint32_t reserved0;
+    uint64_t rsp0, rsp1, rsp2, reserved1;
+    uint64_t ist1, ist2, ist3, ist4, ist5, ist6, ist7;
+    uint64_t reserved2;
+    uint16_t reserved3, io_map_base;
+} __attribute__((packed));
 struct fault_frame { uint64_t vector, error, rip, cs, rflags; };
 static struct gate idt[256] __attribute__((aligned(16)));
+static uint64_t gdt[5] __attribute__((aligned(16)));
+static struct tss64 tss __attribute__((aligned(16)));
+static uint8_t double_fault_stack[16 * 1024] __attribute__((aligned(16)));
 static bool initialized;
+static bool tss_initialized;
+
+/* Reload CS after installing our private GDT; Limine's GDT is borrowed and
+   may not have a free descriptor slot for the TSS. */
+__asm__(
+".global ultrium_load_gdt\n"
+"ultrium_load_gdt:\n"
+"lgdt (%rdi)\n"
+"pushq $0x08\n"
+"leaq 1f(%rip), %rax\n"
+"pushq %rax\n"
+"lretq\n"
+"1: movw $0x10, %ax\n"
+"movw %ax, %ds\n"
+"movw %ax, %es\n"
+"movw %ax, %ss\n"
+"retq\n");
+extern void ultrium_load_gdt(const struct gdtr *descriptor);
 static void print_hex(uint64_t value) {
     terminal_write("0x");
     for (int n = 15; n >= 0; --n) {
@@ -18,14 +47,37 @@ static void print_hex(uint64_t value) {
 __attribute__((noreturn)) void ultrium_exception_report(const struct fault_frame *f) {
     __asm__ volatile("cli");
     terminal_write_color("\nCPU EXCEPTION - KERNEL HALTED\n", TERMINAL_ACCENT);
-    terminal_write("Vector: "); print_hex(f->vector);
+    static const char *const names[32] = {
+        "Divide Error", "Debug", "Non-maskable Interrupt", "Breakpoint",
+        "Overflow", "Bound Range", "Invalid Opcode", "Device Not Available",
+        "Double Fault", "Coprocessor Segment Overrun", "Invalid TSS",
+        "Segment Not Present", "Stack Fault", "General Protection",
+        "Page Fault", "Reserved", "x87 Floating Point", "Alignment Check",
+        "Machine Check", "SIMD Floating Point", "Virtualization",
+        "Control Protection", "Reserved", "Reserved", "Reserved", "Reserved",
+        "Reserved", "Reserved", "Hypervisor Injection", "VMM Communication",
+        "Security", "Reserved"
+    };
+    terminal_write("Exception: ");
+    if (f->vector < 32) terminal_write(names[f->vector]);
+    else terminal_write("Unknown");
+    terminal_write("\nVector: "); print_hex(f->vector);
     terminal_write("\nError:  "); print_hex(f->error);
     terminal_write("\nRIP:    "); print_hex(f->rip);
     if (f->vector == 14) {
         uint64_t cr2;
         __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
         terminal_write("\nCR2:    "); print_hex(cr2);
+        terminal_write("\nPF bits:");
+        terminal_write((f->error & 1) ? " protection" : " not-present");
+        if (f->error & 2) terminal_write(" write");
+        else terminal_write(" read");
+        if (f->error & 4) terminal_write(" user");
+        if (f->error & 8) terminal_write(" reserved-bit");
+        if (f->error & 16) terminal_write(" instruction-fetch");
     }
+    terminal_write("\nCS:     "); print_hex(f->cs);
+    terminal_write("\nRFLAGS: "); print_hex(f->rflags);
     terminal_write("\nReboot to continue.\n");
     for (;;) __asm__ volatile("hlt");
 }
@@ -257,16 +309,41 @@ ultrium_exception_31,
 };
 bool exceptions_init(void) {
     __asm__ volatile("cli" ::: "memory");
+    /* Flat 64-bit kernel code/data descriptors followed by a 64-bit TSS. */
+    gdt[0] = 0;
+    gdt[1] = 0x00af9a000000ffffULL;
+    gdt[2] = 0x00cf92000000ffffULL;
+    tss = (struct tss64){0};
+    tss.ist1 = (uint64_t)(uintptr_t)(double_fault_stack + sizeof(double_fault_stack));
+    tss.io_map_base = sizeof(tss);
+    uint64_t tss_base = (uint64_t)(uintptr_t)&tss;
+    uint64_t tss_limit = sizeof(tss) - 1;
+    gdt[3] = (tss_limit & 0xffff) | ((tss_base & 0xffffff) << 16) |
+             (0x89ULL << 40) | (((tss_limit >> 16) & 0xf) << 48) |
+             (((tss_base >> 24) & 0xff) << 56);
+    gdt[4] = tss_base >> 32;
+    struct gdtr gdtr = {(uint16_t)(sizeof(gdt) - 1), (uint64_t)(uintptr_t)gdt};
+    ultrium_load_gdt(&gdtr);
+    uint16_t tss_selector = 0x18;
+    __asm__ volatile("ltr %0" : : "rm"(tss_selector) : "memory");
     uint16_t cs;
     __asm__ volatile("mov %%cs, %0" : "=r"(cs));
     for (size_t i = 0; i < 32; ++i) {
         uintptr_t p = (uintptr_t)stubs[i];
-        idt[i] = (struct gate){(uint16_t)p, cs, 0, 0x8e,
+        uint8_t ist = i == 8 ? 1 : 0;
+        idt[i] = (struct gate){(uint16_t)p, cs, ist, 0x8e,
             (uint16_t)(p >> 16), (uint32_t)(p >> 32), 0};
     }
     struct idtr d = {(uint16_t)(sizeof(idt) - 1), (uint64_t)(uintptr_t)idt};
     __asm__ volatile("lidt %0" : : "m"(d) : "memory");
+    tss_initialized = true;
     initialized = true;
     return true;
 }
 bool exceptions_ready(void) { return initialized; }
+bool exceptions_self_test(void) {
+    uint16_t tr;
+    __asm__ volatile("str %0" : "=rm"(tr));
+    return initialized && tss_initialized && tr == 0x18 &&
+           (idt[8].ist & 7) == 1 && (idt[8].flags & 0x8f) == 0x8e;
+}

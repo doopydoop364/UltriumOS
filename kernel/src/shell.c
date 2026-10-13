@@ -128,9 +128,12 @@ static void memory_map_test(void) {
                                    : "PAGE TABLE TEST FAILED\n");
 }
 static void exception_status(void) {
-    terminal_write(exceptions_ready() ?
-        "CPU exception handlers: installed (vectors 0-31)\n" :
-        "CPU exception handlers: unavailable\n");
+    if (exceptions_self_test())
+        terminal_write("CPU exceptions: vectors 0-31; TSS loaded; double-fault IST ready\n");
+    else
+        terminal_write(exceptions_ready() ?
+            "CPU exception handlers installed; TSS/IST check failed\n" :
+            "CPU exception handlers: unavailable\n");
 }
 static void mapping_test(void) {
     bool passed = vmm_map_test();
