@@ -57,6 +57,7 @@ static void hcf(void) {
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "memory/heap.h"
+#include "fs/vfs.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
 #include "keyboard/keyboard.h"
@@ -93,6 +94,11 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
+    if (!vfs_init()) {
+        terminal_write_color("RAM FILESYSTEM INIT FAILED\n", TERMINAL_MUTED);
+        hcf();
+    }
+    terminal_write("RAM FILESYSTEM READY\n");
     if (interrupts_init()) {
         terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
         if (keyboard_init_interrupts())

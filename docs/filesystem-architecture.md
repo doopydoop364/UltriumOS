@@ -1,6 +1,6 @@
 # Filesystem architecture proposal
 
-Status: design proposal for Phase B. Ultrium currently has no VFS, RAMFS, block-device filesystem, or persistent file storage. This document defines a small first implementation and does not claim those facilities exist.
+Status: architecture proposal for Phase B. A minimal VFS/RAMFS prototype is being implemented on `feature/vfs-ramfs`, stacked on PR #32; that work is not yet merged. There is no block-device filesystem or persistent file storage. The prototype's current scope and limits are recorded in [ramfs.md](ramfs.md).
 
 ## Goals and boundaries
 
@@ -96,7 +96,7 @@ No persistent-storage claim is appropriate: RAMFS state is volatile and lost at 
 
 ## Shell integration
 
-Use conventional unprefixed commands because these are ordinary file operations: `pwd`, `ls`, `cd`, `mkdir`, `touch`, and `cat`. Implement a small useful subset first (`pwd`, `ls`, `cd`, `mkdir`, `touch`, `cat`) only after the VFS APIs are tested. Keep OS diagnostics under the established `ultrium` namespace. Shell path arguments must be copied or consumed during dispatch; the current command buffer cannot be retained as filesystem-owned memory.
+Use conventional unprefixed commands because these are ordinary file operations: `pwd`, `ls`, `cd`, `mkdir`, `touch`, `cat`, `write`, and `rm`. The first prototype provides this small subset. Keep OS diagnostics under the established `ultrium` namespace. Shell path arguments must be copied or consumed during dispatch; the current command buffer cannot be retained as filesystem-owned memory. `write path text` creates a new file, and `rm path` removes a file or empty directory; neither command adds shell quoting or overwrite behavior.
 
 `cd` changes only the shell's current working directory and must validate the target as a directory. `ls` enumerates through a directory handle. `cat` reads through a file handle and writes bounded chunks to the terminal. Each command needs concise help consistent with existing CLI rules; if commands are grouped into a multiword namespace later, provide help at each namespace level.
 

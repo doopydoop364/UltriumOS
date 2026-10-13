@@ -9,12 +9,14 @@ ultrium test help
 ultrium test memory
 ultrium test interrupts help
 ultrium test interrupts
+ultrium test filesystem help
+ultrium test filesystem
 ultrium test all
 ```
 
-`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `all` runs both groups (16 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
+`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `filesystem` runs four RAMFS/VFS tests. `all` runs all groups (20 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
 
-The suite wraps the existing PMM, heap, page-table, scratch-mapping, and managed-page self-tests. Ownership cases check valid allocate/release cycles, double-free and stale-handle rejection after physical reuse, generation changes, invalid and forged handles, injected exhaustion, and accounting restoration. Other cases check four simultaneous physical allocations, heap block isolation, 32 managed mappings, bounded-pool exhaustion, stale translation removal, and cleanup. The virtual-region case checks single and multi-page mappings, boundary access, noncontiguous physical backing, translation, repeated reuse, invalid frees, both backing-frame and page-table rollback, and exhaustion of all 4096 pages and 64 allocation records. The permission case checks RW/NX defaults, read-only and RX updates, invalid W^X/input rejection, CR0.WP/NXE configuration, and cleanup without intentionally faulting. The original slab stress code has one implementation shared by both command paths.
+The suite wraps the existing PMM, heap, page-table, scratch-mapping, and managed-page self-tests. Ownership cases check valid allocate/release cycles, double-free and stale-handle rejection after physical reuse, generation changes, invalid and forged handles, injected exhaustion, and accounting restoration. Other cases check four simultaneous physical allocations, heap block isolation, 32 managed mappings, bounded-pool exhaustion, stale translation removal, and cleanup. The virtual-region case checks single and multi-page mappings, boundary access, noncontiguous physical backing, translation, repeated reuse, invalid frees, both backing-frame and page-table rollback, and exhaustion of all 4096 pages and 64 allocation records. The permission case checks RW/NX defaults, read-only and RX updates, invalid W^X/input rejection, CR0.WP/NXE configuration, and cleanup without intentionally faulting. The RAMFS cases check normalized paths, file contents and EOF, directory iteration, generation-checked handle reuse, allocation rollback, and allocator accounting. The original slab stress code has one implementation shared by both command paths.
 
 ## Run in development
 
@@ -23,13 +25,14 @@ make TOOLCHAIN=llvm
 python3 tools/qemu-memory-test.py
 python3 tools/qemu-memory-test.py 'ultrium test all'
 python3 tools/qemu-memory-test.py 'ultrium test interrupts'
+python3 tools/qemu-memory-test.py 'ultrium test filesystem'
 python3 tools/qemu-memory-test.py 'ultrium system memory test'
 python3 tools/qemu-memory-test.py --keyboard-regression
 make run TOOLCHAIN=llvm
 ```
 
 GitHub Actions runs the LLVM build and ISO packaging, then runs `ultrium test all`,
-the legacy memory command, and the shell/keyboard regression. The workflow is in
+the filesystem suite separately, the legacy memory command, and the shell/keyboard regression. The workflow is in
 `.github/workflows/kernel-ci.yml`. It uses Ubuntu 24.04 and downloads Limine and
 OVMF release assets through existing Makefile targets; those upstream release
 downloads are not pinned by the workflow. A local passing run does not imply
