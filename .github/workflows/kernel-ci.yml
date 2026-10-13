@@ -25,6 +25,9 @@ jobs:
       - name: Build LLVM kernel and bootable ISO
         run: make TOOLCHAIN=llvm
 
+      - name: Fetch OVMF firmware for headless UEFI tests
+        run: make edk2-ovmf-bins
+
       - name: Run complete memory suite twice in QEMU
         run: python3 tools/qemu-memory-test.py 'ultrium test all'
 
