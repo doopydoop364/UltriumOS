@@ -24,10 +24,11 @@ python3 tools/qemu-memory-test.py
 python3 tools/qemu-memory-test.py 'ultrium test all'
 python3 tools/qemu-memory-test.py 'ultrium test interrupts'
 python3 tools/qemu-memory-test.py 'ultrium system memory test'
+python3 tools/qemu-memory-test.py --keyboard-regression
 make run TOOLCHAIN=llvm
 ```
 
-The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice through QMP keyboard events, reads COM1, and requires two passing summaries in the same boot. In the interrupt-enabled Q35 configuration, this exercises the PS/2 IRQ queue as well as repeated memory cleanup and timer IRQs. `ultrium test interrupts` reports both timer and PS/2 IRQ readiness. QEMU must permit a local Unix QMP socket. QMP startup retries are bounded, and the script reports QEMU startup diagnostics. In the interactive QEMU session, check `help`, `ultrium help`, `ultrium test help`, `ultrium test interrupts help`, the existing nested memory help menus, `ultrium system memory`, `ultrium system interrupts`, keyboard editing/history, and the mapping commands. These visual interactions are not covered by the serial script.
+The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice through QMP keyboard events, reads COM1, and requires two passing summaries in the same boot. In the interrupt-enabled Q35 configuration, this exercises the PS/2 IRQ queue as well as repeated memory cleanup and timer IRQs. `ultrium test interrupts` reports both timer and PS/2 IRQ readiness. The optional `--keyboard-regression` mode edits a command using Home/End, Left/Right, insertion, Backspace and Delete, replays it with Up history, and verifies that Ctrl+C, Ctrl+U, Ctrl+W and Ctrl+L still allow a known test command to execute. Each command must produce its expected COM1 test summary. This test works on the polling-keyboard baseline as well as the later IRQ-backed driver. QEMU must permit a local Unix QMP socket. QMP startup retries are bounded, and the script reports QEMU startup diagnostics. In the interactive QEMU session, check the nested help menus, memory and interrupt status, keyboard editing/history, and mapping commands. These visual interactions are not covered by the serial script.
 
 ## Audit and limits
 
