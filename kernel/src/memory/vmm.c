@@ -300,6 +300,8 @@ static struct pmm_page_handle region_pt_owners[REGION_PT_COUNT];
 /* Static transaction storage avoids depending on the kernel stack size. */
 static struct pmm_page_handle transaction_owners[VMM_REGION_MAX_PAGES];
 static bool region_busy;
+static uint64_t local_apic_va;
+static uint64_t ioapic_va;
 static int32_t injected_fail_after = -1;
 static uint32_t injected_allocations;
 
@@ -651,4 +653,44 @@ bool vmm_region_stats_get(struct vmm_region_stats *stats) {
     for (unsigned i = 1; i < REGION_PT_COUNT; ++i)
         if (region_pt_owners[i].physical) ++stats->page_table_frames;
     return true;
+}
+
+static void *map_fixed_mmio_page(uint64_t physical_address, unsigned page,
+                                 uint64_t *stored_va) {
+    if (!scratch_ready || region_busy || !stored_va) return (void *)0;
+    if (*stored_va) return (void *)(uintptr_t)*stored_va;
+    unsigned index = (unsigned)(((region_va(page) >> 21) & 511U));
+    unsigned slot = (unsigned)((region_va(page) >> 12) & 511U);
+    bool created = false;
+    volatile uint64_t *pt = region_pt(index, true, &created);
+    if (!pt) return (void *)0;
+    if (pt[slot]) {
+        if (created) reclaim_region_pt(index);
+        return (void *)0;
+    }
+    uint64_t mapping = physical_address | 3ULL | (1ULL << 3) |
+                       (1ULL << 4) | NX;
+    pt[slot] = mapping;
+    uint64_t va = region_va(page);
+    invalidate(va);
+    uint64_t translated;
+    if (!vmm_translate(va, &translated) || (translated & ~0xfffULL) != physical_address) {
+        pt[slot] = 0;
+        invalidate(va);
+        if (created) reclaim_region_pt(index);
+        return (void *)0;
+    }
+    *stored_va = va;
+    return (void *)(uintptr_t)va;
+}
+
+void *vmm_map_local_apic(uint64_t physical_address) {
+    if (physical_address != 0xfee00000ULL) return (void *)0;
+    return map_fixed_mmio_page(physical_address, VMM_REGION_MAX_PAGES, &local_apic_va);
+}
+
+void *vmm_map_ioapic(uint64_t physical_address) {
+    if (physical_address != 0xfec00000ULL) return (void *)0;
+    return map_fixed_mmio_page(physical_address, VMM_REGION_MAX_PAGES + 1,
+                               &ioapic_va);
 }

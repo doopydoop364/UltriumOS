@@ -58,6 +58,7 @@ static void hcf(void) {
 #include "memory/vmm.h"
 #include "memory/heap.h"
 #include "system/exceptions.h"
+#include "system/interrupts.h"
 #include "version.h"
 
 void kmain(void) {
@@ -91,6 +92,8 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
+    if (interrupts_init()) terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
+    else terminal_write_color("HARDWARE INTERRUPTS UNAVAILABLE; USING POLLED INPUT\n", TERMINAL_MUTED);
     terminal_write("INTERACTIVE SHELL READY\n\n");
     shell_run();
     hcf();

@@ -15,14 +15,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     command_text = sys.argv[1] if len(sys.argv) > 1 else "ultrium test memory"
-    expected_count = 1 if command_text == "ultrium system memory test" else 14
+    expected_count = {
+        "ultrium system memory test": 1,
+        "ultrium test memory": 14,
+        "ultrium test interrupts": 1,
+        "ultrium test all": 15,
+    }.get(command_text)
     if command_text not in ("ultrium test memory", "ultrium test all",
-                            "ultrium system memory test"):
+                            "ultrium test interrupts", "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
         qmp_path = os.path.join(temporary, "qmp.sock")
         command = [
-            "qemu-system-x86_64", "-M", "q35", "-m", "2G",
+            "qemu-system-x86_64", "-M", os.environ.get("ULTRIUM_QEMU_MACHINE", "q35"), "-m", "2G",
             "-drive", "if=pflash,unit=0,format=raw,file=" +
             os.path.join(ROOT, "edk2-ovmf-bins/ovmf-code-x86_64.fd") + ",readonly=on",
             "-cdrom", os.path.join(ROOT, "template-x86_64.iso"),

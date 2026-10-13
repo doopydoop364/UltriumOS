@@ -20,6 +20,7 @@ static struct tss64 tss __attribute__((aligned(16)));
 static uint8_t double_fault_stack[16 * 1024] __attribute__((aligned(16)));
 static bool initialized;
 static bool tss_initialized;
+static uint16_t kernel_cs;
 
 /* Reload CS after installing our private GDT; Limine's GDT is borrowed and
    may not have a free descriptor slot for the TSS. */
@@ -326,12 +327,11 @@ bool exceptions_init(void) {
     ultrium_load_gdt(&gdtr);
     uint16_t tss_selector = 0x18;
     __asm__ volatile("ltr %0" : : "rm"(tss_selector) : "memory");
-    uint16_t cs;
-    __asm__ volatile("mov %%cs, %0" : "=r"(cs));
+    __asm__ volatile("mov %%cs, %0" : "=r"(kernel_cs));
     for (size_t i = 0; i < 32; ++i) {
         uintptr_t p = (uintptr_t)stubs[i];
         uint8_t ist = i == 8 ? 1 : 0;
-        idt[i] = (struct gate){(uint16_t)p, cs, ist, 0x8e,
+        idt[i] = (struct gate){(uint16_t)p, kernel_cs, ist, 0x8e,
             (uint16_t)(p >> 16), (uint32_t)(p >> 32), 0};
     }
     struct idtr d = {(uint16_t)(sizeof(idt) - 1), (uint64_t)(uintptr_t)idt};
@@ -346,4 +346,14 @@ bool exceptions_self_test(void) {
     __asm__ volatile("str %0" : "=rm"(tr));
     return initialized && tss_initialized && tr == 0x18 &&
            (idt[8].ist & 7) == 1 && (idt[8].flags & 0x8f) == 0x8e;
+}
+bool exceptions_install_irq_gate(unsigned vector, void (*handler)(void)) {
+    if (!initialized || vector < 32 || vector >= 48 || !handler) return false;
+    uint64_t flags;
+    __asm__ volatile("pushfq; popq %0" : "=r"(flags));
+    if (flags & (1ULL << 9)) return false;
+    uintptr_t p = (uintptr_t)handler;
+    idt[vector] = (struct gate){(uint16_t)p, kernel_cs, 0, 0x8e,
+        (uint16_t)(p >> 16), (uint32_t)(p >> 32), 0};
+    return true;
 }
