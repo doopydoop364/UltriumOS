@@ -1,6 +1,6 @@
 # Filesystem architecture proposal
 
-Status: architecture proposal for Phase B. A minimal VFS/RAMFS prototype is being implemented on `feature/vfs-ramfs`, stacked on PR #32; that work is not yet merged. There is no block-device filesystem or persistent file storage. The prototype's current scope and limits are recorded in [ramfs.md](ramfs.md).
+Status: accepted architecture for the initial Phase B filesystem. The minimal VFS/RAMFS implementation and its current scope are recorded in [ramfs.md](ramfs.md). There is no block-device filesystem or persistent file storage.
 
 ## Goals and boundaries
 
