@@ -39,4 +39,7 @@ bool vmm_set_pages_permissions(void *address, uint32_t permissions);
 bool vmm_get_page_permissions(const void *address, uint32_t *permissions);
 bool vmm_page_protection_ready(void);
 bool vmm_region_stats_get(struct vmm_region_stats *stats);
+/* Borrow the architectural local APIC MMIO page; it is never PMM-owned. */
+void *vmm_map_local_apic(uint64_t physical_address);
+void *vmm_map_ioapic(uint64_t physical_address);
 #endif

@@ -8,6 +8,7 @@
 #include "memory/vmm.h"
 #include "memory/vmm_test.h"
 #include "system/exceptions.h"
+#include "system/interrupts.h"
 
 /* COM1 is only used for test results. A missing UART never blocks the CLI. */
 static bool serial_ready;
@@ -50,6 +51,13 @@ struct test_case { const char *name; test_fn run; };
 static const char *physical_self(void) { return pmm_self_test() ? 0 : "PMM self-test failed"; }
 static const char *exception_descriptors(void) {
     return exceptions_self_test() ? 0 : "TSS, task register, or double-fault IST invalid";
+}
+static const char *timer_interrupt(void) {
+    if (interrupts_self_test()) return 0;
+    report("timer IRQ status mask|IRR<<8|IF<<16|tick-seen<<17|last-vector<<24=");
+    report_number(interrupts_test_status());
+    report("\n");
+    return "PIT IRQ0 did not advance the system tick";
 }
 static const char *physical_ownership(void) {
     uint64_t before = pmm_free_pages();
@@ -491,26 +499,46 @@ static const struct test_case memory_cases[] = {
     {"managed edges", managed_edges}, {"virtual regions", region_allocations},
     {"VM permissions", page_permissions}
 };
-static void run(const struct test_case *cases, size_t count) {
+static const struct test_case interrupt_cases[] = {
+    {"periodic timer IRQ", timer_interrupt}
+};
+static void run_groups(const struct test_case *const *groups,
+                       const size_t *counts, size_t group_count) {
     serial_init();
     unsigned passed = 0, failed = 0;
     report("TEST BEGIN\n");
-    for (size_t i = 0; i < count; ++i) {
-        const char *reason = cases[i].run();
-        report(reason ? "FAIL " : "PASS "); report(cases[i].name);
-        if (reason) {
-            ++failed; report(": "); report(reason);
-            if (cases[i].run == mapping_self || cases[i].run == managed_self) {
-                report(" "); report_number(vmm_test_error());
-            }
-        } else ++passed;
-        report("\n");
+    for (size_t group = 0; group < group_count; ++group) {
+        for (size_t i = 0; i < counts[group]; ++i) {
+            const struct test_case *test = &groups[group][i];
+            const char *reason = test->run();
+            report(reason ? "FAIL " : "PASS "); report(test->name);
+            if (reason) {
+                ++failed; report(": "); report(reason);
+                if (test->run == mapping_self || test->run == managed_self) {
+                    report(" "); report_number(vmm_test_error());
+                }
+            } else ++passed;
+            report("\n");
+        }
     }
     report("TEST SUMMARY passed="); report_number(passed);
     report(" failed="); report_number(failed); report("\n");
 }
+static void run(const struct test_case *cases, size_t count) {
+    const struct test_case *groups[] = {cases};
+    const size_t counts[] = {count};
+    run_groups(groups, counts, 1);
+}
 void kernel_tests_memory(void) { run(memory_cases, sizeof(memory_cases)/sizeof(memory_cases[0])); }
-void kernel_tests_all(void) { kernel_tests_memory(); }
+void kernel_tests_interrupts(void) { run(interrupt_cases, sizeof(interrupt_cases)/sizeof(interrupt_cases[0])); }
+void kernel_tests_all(void) {
+    const struct test_case *groups[] = {memory_cases, interrupt_cases};
+    const size_t counts[] = {
+        sizeof(memory_cases)/sizeof(memory_cases[0]),
+        sizeof(interrupt_cases)/sizeof(interrupt_cases[0])
+    };
+    run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
+}
 void kernel_test_slab_stress(void) {
     const struct test_case legacy_slab_case = {"slab stress", slab_stress};
     run(&legacy_slab_case, 1);

@@ -6,6 +6,7 @@
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "system/exceptions.h"
+#include "system/interrupts.h"
 #include "memory/heap.h"
 #include "tests/tests.h"
 #include "version.h"
@@ -60,6 +61,7 @@ static void system_help(void) {
     terminal_write("  ultrium system info\n");
     terminal_write("  ultrium system memory help  (Memory namespace)\n");
     terminal_write("  ultrium system exceptions\n");
+    terminal_write("  ultrium system interrupts help  (Interrupt status)\n");
 }
 static void memory_help(void) {
     terminal_write("Ultrium memory commands:\n");
@@ -90,7 +92,14 @@ static void test_help(void) {
     terminal_write("Kernel test commands:\n");
     terminal_write("  ultrium test help\n");
     terminal_write("  ultrium test memory\n");
+    terminal_write("  ultrium test interrupts\n");
+    terminal_write("  ultrium test interrupts help  (Interrupt tests)\n");
     terminal_write("  ultrium test all\n");
+}
+static void test_interrupts_help(void) {
+    terminal_write("Interrupt test commands:\n");
+    terminal_write("  ultrium test interrupts help\n");
+    terminal_write("  ultrium test interrupts\n");
 }
 static void version(void) { terminal_write("Ultrium OS " ULTRIUM_VERSION "\n"); }
 static void system_info(void) {
@@ -135,6 +144,20 @@ static void exception_status(void) {
             "CPU exception handlers installed; TSS/IST check failed\n" :
             "CPU exception handlers: unavailable\n");
 }
+static void interrupts_help(void) {
+    terminal_write("Interrupt status commands:\n");
+    terminal_write("  ultrium system interrupts help\n");
+    terminal_write("  ultrium system interrupts\n");
+}
+static void interrupts_status(void) {
+    if (!interrupts_ready()) {
+        terminal_write("Hardware interrupts unavailable; keyboard remains polled.\n");
+        return;
+    }
+    terminal_write("Controller: local APIC + IOAPIC\nPIT frequency: 100 Hz\nTimer ticks: ");
+    print_uint(interrupts_timer_ticks());
+    terminal_write("\n");
+}
 static void mapping_test(void) {
     bool passed = vmm_map_test();
     terminal_write(passed ? "VIRTUAL MAPPING TEST PASSED\n" : "VIRTUAL MAPPING TEST FAILED\n");
@@ -159,7 +182,11 @@ static const struct command commands[] = {
     {"system memory mapping test", mapping_test},
     {"system memory mapping managed test", managed_test},
     {"system exceptions", exception_status},
+    {"system interrupts help", interrupts_help},
+    {"system interrupts", interrupts_status},
     {"test help", test_help}, {"test memory", kernel_tests_memory},
+    {"test interrupts help", test_interrupts_help},
+    {"test interrupts", kernel_tests_interrupts},
     {"test all", kernel_tests_all},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
