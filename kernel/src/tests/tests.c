@@ -10,6 +10,8 @@
 #include "system/exceptions.h"
 #include "system/interrupts.h"
 #include "keyboard/keyboard.h"
+#include "fs/vfs.h"
+#include "memory.h"
 
 /* COM1 is only used for test results. A missing UART never blocks the CLI. */
 static bool serial_ready;
@@ -494,6 +496,183 @@ static const char *page_permissions(void) {
     return 0;
 }
 
+static const char *filesystem_paths(void) {
+    char normalized[VFS_PATH_MAX + 1U];
+    if (!vfs_is_directory("/")) return "RAMFS root is unavailable";
+    if (vfs_normalize("/alpha/./beta/../file", "/", normalized,
+                      sizeof(normalized)) != VFS_OK ||
+        memcmp(normalized, "/alpha/file", sizeof("/alpha/file")))
+        return "absolute path normalization failed";
+    if (vfs_normalize("../../alpha", "/", normalized, sizeof(normalized)) != VFS_OK ||
+        memcmp(normalized, "/alpha", sizeof("/alpha")))
+        return "root path clamping failed";
+    if (vfs_normalize("relative", 0, normalized, sizeof(normalized)) == VFS_OK ||
+        vfs_normalize("/name-that-is-far-too-long-for-one-component", "/",
+                      normalized, sizeof(normalized)) == VFS_OK)
+        return "invalid path accepted";
+    if (vfs_create_directory("/vfs-test") != VFS_OK)
+        return "test directory creation failed";
+    enum vfs_error duplicate = vfs_create_directory("/vfs-test");
+    bool directory_ok = duplicate == VFS_EXISTS && vfs_is_directory("/vfs-test");
+    bool cleanup_ok = vfs_unlink("/vfs-test") == VFS_OK;
+    return directory_ok && cleanup_ok ? 0 : "duplicate handling or directory cleanup failed";
+}
+
+static const char *filesystem_file_io(void) {
+    uint64_t frames = pmm_free_pages(), allocations = heap_live_allocations();
+    struct vfs_file file = {0}, stale = {0};
+    struct vfs_file forged = {VFS_HANDLE_SLOTS, 1};
+    const char *error = 0;
+    size_t amount = 99;
+    char data[8] = {0};
+    if (vfs_create_directory("/vfs-test") != VFS_OK) return "file test directory failed";
+    if (vfs_create_file("/vfs-test/data") != VFS_OK) { error = "file creation failed"; goto cleanup; }
+    if (vfs_file_close(&forged) != VFS_BAD_HANDLE) {
+        error = "forged file handle was accepted"; goto cleanup;
+    }
+    if (vfs_file_open("/vfs-test/data", VFS_OPEN_READ | VFS_OPEN_WRITE, &file) != VFS_OK) {
+        error = "read/write open failed"; goto cleanup;
+    }
+    if (vfs_file_open("/vfs-test/data", VFS_OPEN_READ, &file) != VFS_BAD_HANDLE) {
+        error = "open overwrote a live file handle"; goto cleanup;
+    }
+    if (vfs_unlink("/vfs-test/data") != VFS_UNSUPPORTED) {
+        error = "open file deletion was not rejected"; goto cleanup;
+    }
+    if (vfs_file_read(&file, data, sizeof(data), &amount) != VFS_OK || amount != 0) {
+        error = "empty file did not return EOF"; goto cleanup;
+    }
+    static const char expected[] = "hello";
+    if (vfs_file_write(&file, expected, sizeof(expected) - 1, &amount) != VFS_OK ||
+        amount != sizeof(expected) - 1) { error = "file write failed"; goto cleanup; }
+    if (vfs_file_read(&file, data, sizeof(data), &amount) != VFS_OK || amount != 0) {
+        error = "read at end of file failed"; goto cleanup;
+    }
+    stale = file;
+    if (vfs_file_close(&file) != VFS_OK) { error = "file close failed"; goto cleanup; }
+    if (vfs_file_close(&stale) != VFS_BAD_HANDLE) { error = "stale file handle was accepted"; goto cleanup; }
+    if (vfs_file_open("/vfs-test/data", VFS_OPEN_READ, &file) != VFS_OK) {
+        error = "read-only reopen failed"; goto cleanup;
+    }
+    if (vfs_file_read(&stale, data, sizeof(data), &amount) != VFS_BAD_HANDLE) {
+        error = "stale handle survived slot reuse"; goto cleanup;
+    }
+    if (vfs_file_write(&file, expected, 1, &amount) != VFS_BAD_HANDLE) {
+        error = "read-only handle allowed a write"; goto cleanup;
+    }
+    if (vfs_file_read(&file, data, sizeof(data), &amount) != VFS_OK ||
+        amount != sizeof(expected) - 1 || memcmp(data, expected, amount)) {
+        error = "file contents did not round-trip"; goto cleanup;
+    }
+    if (vfs_file_close(&file) != VFS_OK) { error = "read handle close failed"; goto cleanup; }
+    if (vfs_file_open("/vfs-test/data", VFS_OPEN_WRITE, &file) != VFS_OK) {
+        error = "write-only reopen failed"; goto cleanup;
+    }
+    if (vfs_file_write(&file, expected, VFS_FILE_MAX + 1U, &amount) != VFS_NO_SPACE || amount) {
+        error = "oversized file write was accepted"; goto cleanup;
+    }
+    if (vfs_file_close(&file) != VFS_OK) { error = "write handle close failed"; goto cleanup; }
+cleanup:
+    if (file.generation && vfs_file_close(&file) != VFS_OK) error = "file handle cleanup failed";
+    if (vfs_unlink("/vfs-test/data") != VFS_OK && !error) error = "file cleanup failed";
+    if (vfs_unlink("/vfs-test") != VFS_OK && !error) error = "directory cleanup failed";
+    if (pmm_free_pages() != frames || heap_live_allocations() != allocations)
+        error = "file test leaked heap or physical memory";
+    return error;
+}
+
+static const char *filesystem_directory_iteration(void) {
+    uint64_t allocations = heap_live_allocations();
+    struct vfs_dir dir = {0};
+    const char *error = 0;
+    char name[VFS_NAME_MAX + 1U];
+    enum vfs_node_type type;
+    if (vfs_create_directory("/vfs-list") != VFS_OK) return "listing directory creation failed";
+    if (vfs_create_file("/vfs-list/first") != VFS_OK ||
+        vfs_create_directory("/vfs-list/second") != VFS_OK) {
+        error = "listing children creation failed"; goto cleanup;
+    }
+    if (vfs_dir_open("/vfs-list", &dir) != VFS_OK) { error = "directory open failed"; goto cleanup; }
+    if (vfs_dir_open("/vfs-list", &dir) != VFS_BAD_HANDLE) {
+        error = "open overwrote a live directory handle"; goto cleanup;
+    }
+    if (vfs_unlink("/vfs-list") != VFS_UNSUPPORTED) {
+        error = "open directory removal was not rejected"; goto cleanup;
+    }
+    if (vfs_unlink("/vfs-list/first") != VFS_UNSUPPORTED) {
+        error = "mutation during directory iteration was accepted"; goto cleanup;
+    }
+    if (vfs_dir_next(&dir, name, sizeof(name), &type) != VFS_OK ||
+        type != VFS_NODE_FILE || memcmp(name, "first", sizeof("first"))) {
+        error = "first directory entry mismatch"; goto cleanup;
+    }
+    if (vfs_dir_next(&dir, name, sizeof(name), &type) != VFS_OK ||
+        type != VFS_NODE_DIRECTORY || memcmp(name, "second", sizeof("second"))) {
+        error = "second directory entry mismatch"; goto cleanup;
+    }
+    if (vfs_dir_next(&dir, name, sizeof(name), &type) != VFS_END) {
+        error = "directory end marker missing"; goto cleanup;
+    }
+cleanup:
+    if (dir.generation && vfs_dir_close(&dir) != VFS_OK) error = "directory handle cleanup failed";
+    if (vfs_unlink("/vfs-list/first") != VFS_OK && !error) error = "file entry cleanup failed";
+    if (vfs_unlink("/vfs-list/second") != VFS_OK && !error) error = "directory entry cleanup failed";
+    if (vfs_unlink("/vfs-list") != VFS_OK && !error) error = "listing directory cleanup failed";
+    if (heap_live_allocations() != allocations) error = "directory enumeration leaked a handle";
+    return error;
+}
+
+static const char *filesystem_rollback(void) {
+    uint64_t frames = pmm_free_pages(), allocations = heap_live_allocations();
+    struct vfs_file file = {0};
+    const char *error = 0;
+    size_t written = 123;
+    char payload[128];
+    memset(payload, 0x5a, sizeof(payload));
+    if (vfs_create_directory("/vfs-fail") != VFS_OK) return "rollback directory creation failed";
+    vfs_test_fail_alloc_after(0);
+    enum vfs_error failed_create = vfs_create_file("/vfs-fail/item");
+    vfs_test_fail_alloc_after(-1);
+    if (failed_create != VFS_NO_SPACE || vfs_create_file("/vfs-fail/item") != VFS_OK) {
+        error = "failed node allocation changed directory state"; goto cleanup;
+    }
+    if (vfs_file_open("/vfs-fail/item", VFS_OPEN_WRITE, &file) != VFS_OK) {
+        error = "rollback file open failed"; goto cleanup;
+    }
+    vfs_test_fail_alloc_after(0);
+    enum vfs_error failed_write = vfs_file_write(&file, payload, sizeof(payload), &written);
+    vfs_test_fail_alloc_after(-1);
+    if (failed_write != VFS_NO_SPACE || written != 0) {
+        error = "failed buffer growth was not atomic"; goto cleanup;
+    }
+    if (vfs_file_write(&file, payload, sizeof(payload), &written) != VFS_OK ||
+        written != sizeof(payload)) { error = "write did not recover after allocation failure"; goto cleanup; }
+    if (vfs_file_close(&file) != VFS_OK) { error = "rollback handle close failed"; goto cleanup; }
+
+    struct vfs_file handles[VFS_HANDLE_SLOTS + 1U] = {{0}};
+    unsigned opened = 0;
+    for (; opened < VFS_HANDLE_SLOTS; ++opened) {
+        if (vfs_file_open("/vfs-fail/item", VFS_OPEN_READ, &handles[opened]) != VFS_OK) {
+            error = "file handle pool filled early"; break;
+        }
+    }
+    if (!error && vfs_file_open("/vfs-fail/item", VFS_OPEN_READ,
+                                &handles[VFS_HANDLE_SLOTS]) != VFS_NO_SPACE)
+        error = "file handle pool exhaustion was not reported";
+    while (opened) {
+        --opened;
+        if (vfs_file_close(&handles[opened]) != VFS_OK) error = "file handle pool cleanup failed";
+    }
+cleanup:
+    vfs_test_fail_alloc_after(-1);
+    if (file.generation && vfs_file_close(&file) != VFS_OK) error = "rollback file close failed";
+    if (vfs_unlink("/vfs-fail/item") != VFS_OK && !error) error = "rollback file cleanup failed";
+    if (vfs_unlink("/vfs-fail") != VFS_OK && !error) error = "rollback directory cleanup failed";
+    if (pmm_free_pages() != frames || heap_live_allocations() != allocations)
+        error = "allocation failure left leaked resources";
+    return error;
+}
+
 static const struct test_case memory_cases[] = {
     {"exception TSS/IST", exception_descriptors},
     {"physical self", physical_self}, {"physical ownership", physical_ownership},
@@ -507,6 +686,12 @@ static const struct test_case memory_cases[] = {
 static const struct test_case interrupt_cases[] = {
     {"periodic timer IRQ", timer_interrupt},
     {"PS/2 keyboard IRQ", keyboard_interrupt}
+};
+static const struct test_case filesystem_cases[] = {
+    {"filesystem paths", filesystem_paths},
+    {"filesystem file I/O", filesystem_file_io},
+    {"filesystem directory iteration", filesystem_directory_iteration},
+    {"filesystem allocation rollback", filesystem_rollback}
 };
 static void run_groups(const struct test_case *const *groups,
                        const size_t *counts, size_t group_count) {
@@ -537,11 +722,13 @@ static void run(const struct test_case *cases, size_t count) {
 }
 void kernel_tests_memory(void) { run(memory_cases, sizeof(memory_cases)/sizeof(memory_cases[0])); }
 void kernel_tests_interrupts(void) { run(interrupt_cases, sizeof(interrupt_cases)/sizeof(interrupt_cases[0])); }
+void kernel_tests_filesystem(void) { run(filesystem_cases, sizeof(filesystem_cases)/sizeof(filesystem_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
-        sizeof(interrupt_cases)/sizeof(interrupt_cases[0])
+        sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
+        sizeof(filesystem_cases)/sizeof(filesystem_cases[0])
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

@@ -28,8 +28,11 @@ jobs:
       - name: Fetch OVMF firmware for headless UEFI tests
         run: make edk2-ovmf-bins
 
-      - name: Run complete memory suite twice in QEMU
+      - name: Run complete kernel suite twice in QEMU
         run: python3 tools/qemu-memory-test.py 'ultrium test all'
+
+      - name: Run RAM filesystem suite independently in QEMU
+        run: python3 tools/qemu-memory-test.py 'ultrium test filesystem'
 
       - name: Run legacy memory command twice in QEMU
         run: python3 tools/qemu-memory-test.py 'ultrium system memory test'
