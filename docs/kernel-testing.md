@@ -24,10 +24,25 @@ python3 tools/qemu-memory-test.py
 python3 tools/qemu-memory-test.py 'ultrium test all'
 python3 tools/qemu-memory-test.py 'ultrium test interrupts'
 python3 tools/qemu-memory-test.py 'ultrium system memory test'
+python3 tools/qemu-memory-test.py --keyboard-regression
 make run TOOLCHAIN=llvm
 ```
 
-The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice into the existing polling PS/2 keyboard via QMP, reads COM1, and requires two passing summaries in the same boot. This checks that repeated tests return allocator accounting and ownership state to their original values and that timer IRQs continue to run. QEMU must permit a local Unix QMP socket. QMP startup retries are bounded, and the script reports QEMU startup diagnostics. In the interactive QEMU session, check `help`, `ultrium help`, `ultrium test help`, `ultrium test interrupts help`, the existing nested memory help menus, `ultrium system memory`, `ultrium system interrupts`, keyboard editing/history, and the mapping commands. These visual interactions are not covered by the serial script.
+GitHub Actions runs the LLVM build and ISO packaging, then runs `ultrium test all`,
+the legacy memory command, and the shell/keyboard regression. The workflow is in
+`.github/workflows/kernel-ci.yml`. It uses Ubuntu 24.04 and downloads Limine and
+OVMF release assets through existing Makefile targets; those upstream release
+downloads are not pinned by the workflow. A local passing run does not imply
+that GitHub Actions has run or passed; check the PR's checks for the hosted result.
+
+The Python script uses only the standard library. It boots UEFI QEMU, types test
+commands through QMP, reads COM1, and requires passing summaries. The repeated
+suite checks allocator cleanup and timer progress. The `--keyboard-regression`
+mode checks Home/End, Left/Right, insertion, Backspace, Delete, Up history, and
+Ctrl+C/U/W/L by requiring six successful slab-test summaries. QEMU must permit a
+local Unix QMP socket. QMP startup retries and test waits are bounded, and QEMU
+startup diagnostics are reported. These editing paths are covered by the QMP
+test; graphical interaction remains useful for manual boot and appearance checks.
 
 ## Audit and limits
 
