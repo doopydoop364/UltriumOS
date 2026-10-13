@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import errno
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,9 +39,21 @@ def main():
                     raise RuntimeError("QEMU exited during startup: " +
                                        process.stderr.read().decode(errors="replace"))
                 time.sleep(.05)
-            monitor = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            monitor.settimeout(5)
-            monitor.connect(qmp_path)
+            connect_deadline = time.monotonic() + 10
+            while True:
+                monitor = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                monitor.settimeout(1)
+                try:
+                    monitor.connect(qmp_path)
+                    break
+                except OSError as error:
+                    monitor.close()
+                    if error.errno not in (errno.ENOENT, errno.ECONNREFUSED) or \
+                            time.monotonic() >= connect_deadline:
+                        raise
+                    if process.poll() is not None:
+                        raise RuntimeError("QEMU exited before QMP became ready") from error
+                    time.sleep(.05)
             stream = monitor.makefile("rwb", buffering=0)
             stream.readline()
 
