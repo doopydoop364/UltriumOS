@@ -21,10 +21,24 @@ make TOOLCHAIN=llvm
 python3 tools/qemu-memory-test.py
 python3 tools/qemu-memory-test.py 'ultrium test all'
 python3 tools/qemu-memory-test.py 'ultrium system memory test'
+python3 tools/qemu-memory-test.py --keyboard-regression
 make run TOOLCHAIN=llvm
 ```
 
+GitHub Actions runs the LLVM build and ISO packaging, then runs `ultrium test all`
+and the legacy `ultrium system memory test` twice per QEMU boot. The workflow is
+in `.github/workflows/kernel-ci.yml`. It uses Ubuntu 24.04 and downloads the
+Limine and OVMF release assets referenced by the existing Makefile; those
+upstream release downloads are not pinned by this workflow. A local passing run
+does not imply that GitHub Actions has run or passed; check the PR's checks for
+the hosted result.
+
 The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice into the existing PS/2 keyboard via QMP, reads COM1, and requires two passing summaries in the same boot. This checks that repeated tests return allocator accounting and ownership state to their original values. QEMU must permit a local Unix QMP socket. The script uses a fixed firmware wait, so slow hosts may need a longer wait. In the interactive QEMU session, check `help`, `ultrium help`, `ultrium test help`, the existing nested memory help menus, `ultrium system memory`, keyboard editing/history, and the mapping commands. These visual interactions are not covered by the serial script.
+
+The `--keyboard-regression` mode uses QMP to correct a typo with cursor movement,
+insertion, Backspace and Delete; replay the command with Up history; and exercise
+Ctrl+C, Ctrl+U, Ctrl+W and Ctrl+L. Each edited command must execute the slab stress
+test and produce its expected COM1 summary. The CI workflow runs this scenario.
 
 ## Audit and limits
 
