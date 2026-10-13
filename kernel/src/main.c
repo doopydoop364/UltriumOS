@@ -58,6 +58,7 @@ static void hcf(void) {
 #include "memory/vmm.h"
 #include "memory/heap.h"
 #include "system/exceptions.h"
+#include "version.h"
 
 void kmain(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) hcf();
@@ -68,7 +69,7 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.1.2\n");
+    terminal_write(" OS  " ULTRIUM_VERSION "\n");
     terminal_write_color("BUILT TO EXPERIMENT. READY TO EVOLVE.\n\n", TERMINAL_MUTED);
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
