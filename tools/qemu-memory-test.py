@@ -19,8 +19,8 @@ def main():
     expected_count = {
         "ultrium system memory test": 1,
         "ultrium test memory": 14,
-        "ultrium test interrupts": 1,
-        "ultrium test all": 15,
+        "ultrium test interrupts": 2,
+        "ultrium test all": 16,
     }.get(command_text)
     if not keyboard_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
@@ -108,11 +108,11 @@ def main():
                     send_key("spc" if character == " " else character)
 
             if keyboard_regression:
-                summary = "TEST SUMMARY passed=1 failed=0"
+                memory_summary = "TEST SUMMARY passed=1 failed=0"
                 edited_command = "ultrium system memory test"
 
-                # Correct a deliberate typo with Home/End, Left/Right,
-                # insertion, Backspace and forward Delete.
+                # Exercise Home/End, both cursor directions, insertion,
+                # backspace, and forward Delete, correcting a deliberate typo.
                 type_text("ultrium system memorry test")
                 for key in ("home", "right", "left", "end"):
                     send_key(key)
@@ -125,46 +125,50 @@ def main():
                 send_key("left")
                 send_key("backspace")
                 send_key("ret")
-                wait_for_summary(summary, 1)
+                wait_for_summary(memory_summary, 1)
 
                 # Up must restore the previous command and execute it again.
                 send_key("up")
                 send_key("ret")
-                wait_for_summary(summary, 2)
+                wait_for_summary(memory_summary, 2)
 
+                # Each shortcut is followed by a command whose test summary
+                # proves that input cancellation/editing did not poison the line.
                 type_text("discard")
                 send_key("ctrl-c")
                 type_text(edited_command)
                 send_key("ret")
-                wait_for_summary(summary, 3)
+                wait_for_summary(memory_summary, 3)
 
                 type_text("discard")
                 send_key("ctrl-u")
                 type_text(edited_command)
                 send_key("ret")
-                wait_for_summary(summary, 4)
+                wait_for_summary(memory_summary, 4)
 
                 type_text(edited_command + " discard")
                 send_key("ctrl-w")
                 send_key("ret")
-                wait_for_summary(summary, 5)
+                wait_for_summary(memory_summary, 5)
 
                 type_text(edited_command)
                 send_key("ctrl-l")
                 send_key("ret")
-                wait_for_summary(summary, 6)
-
+                wait_for_summary(memory_summary, 6)
                 decoded = output.decode(errors="replace")
                 print(decoded, end="")
-                if decoded.count(summary) != 6:
-                    raise RuntimeError("keyboard regression did not execute all six test commands")
+                if decoded.count(memory_summary) != 6:
+                    raise RuntimeError(
+                        "keyboard regression did not execute the edited and replayed commands"
+                    )
                 return 0
 
             expected = "TEST SUMMARY passed=" + str(expected_count) + " failed=0"
             # Repeat in one boot so allocator accounting and ownership cleanup
             # are checked against the prior run's resulting state.
             for repetition in range(2):
-                type_text(command_text)
+                for key in command_text:
+                    send_key("spc" if key == " " else key)
                 send_key("ret")
                 wait_for_summary(expected, repetition + 1)
             decoded = output.decode(errors="replace")

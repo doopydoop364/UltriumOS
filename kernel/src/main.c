@@ -59,6 +59,7 @@ static void hcf(void) {
 #include "memory/heap.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
+#include "keyboard/keyboard.h"
 #include "version.h"
 
 void kmain(void) {
@@ -92,8 +93,15 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
-    if (interrupts_init()) terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
-    else terminal_write_color("HARDWARE INTERRUPTS UNAVAILABLE; USING POLLED INPUT\n", TERMINAL_MUTED);
+    if (interrupts_init()) {
+        terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
+        if (keyboard_init_interrupts())
+            terminal_write("PS/2 KEYBOARD IRQ INPUT READY\n");
+        else
+            terminal_write_color("PS/2 KEYBOARD IRQ UNAVAILABLE; USING POLLED INPUT\n", TERMINAL_MUTED);
+    } else {
+        terminal_write_color("HARDWARE INTERRUPTS UNAVAILABLE; USING POLLED INPUT\n", TERMINAL_MUTED);
+    }
     terminal_write("INTERACTIVE SHELL READY\n\n");
     shell_run();
     hcf();

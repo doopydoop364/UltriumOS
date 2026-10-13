@@ -12,7 +12,7 @@ ultrium test interrupts
 ultrium test all
 ```
 
-`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick. `all` runs both groups (15 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
+`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `all` runs both groups (16 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
 
 The suite wraps the existing PMM, heap, page-table, scratch-mapping, and managed-page self-tests. Ownership cases check valid allocate/release cycles, double-free and stale-handle rejection after physical reuse, generation changes, invalid and forged handles, injected exhaustion, and accounting restoration. Other cases check four simultaneous physical allocations, heap block isolation, 32 managed mappings, bounded-pool exhaustion, stale translation removal, and cleanup. The virtual-region case checks single and multi-page mappings, boundary access, noncontiguous physical backing, translation, repeated reuse, invalid frees, both backing-frame and page-table rollback, and exhaustion of all 4096 pages and 64 allocation records. The permission case checks RW/NX defaults, read-only and RX updates, invalid W^X/input rejection, CR0.WP/NXE configuration, and cleanup without intentionally faulting. The original slab stress code has one implementation shared by both command paths.
 
@@ -35,14 +35,7 @@ OVMF release assets through existing Makefile targets; those upstream release
 downloads are not pinned by the workflow. A local passing run does not imply
 that GitHub Actions has run or passed; check the PR's checks for the hosted result.
 
-The Python script uses only the standard library. It boots UEFI QEMU, types test
-commands through QMP, reads COM1, and requires passing summaries. The repeated
-suite checks allocator cleanup and timer progress. The `--keyboard-regression`
-mode checks Home/End, Left/Right, insertion, Backspace, Delete, Up history, and
-Ctrl+C/U/W/L by requiring six successful slab-test summaries. QEMU must permit a
-local Unix QMP socket. QMP startup retries and test waits are bounded, and QEMU
-startup diagnostics are reported. These editing paths are covered by the QMP
-test; graphical interaction remains useful for manual boot and appearance checks.
+The Python script uses only the standard library. It boots UEFI QEMU, types the selected test command twice through QMP keyboard events, reads COM1, and requires two passing summaries in the same boot. In the interrupt-enabled Q35 configuration, this exercises the PS/2 IRQ queue as well as repeated memory cleanup and timer IRQs. `ultrium test interrupts` reports both timer and PS/2 IRQ readiness. The optional `--keyboard-regression` mode edits a command using Home/End, Left/Right, insertion, Backspace and Delete, replays it with Up history, and verifies that Ctrl+C, Ctrl+U, Ctrl+W and Ctrl+L still allow a known test command to execute. Each command must produce its expected COM1 test summary. This test works on the polling-keyboard baseline as well as the later IRQ-backed driver. QEMU must permit a local Unix QMP socket. QMP startup retries are bounded, and the script reports QEMU startup diagnostics. In the interactive QEMU session, check the nested help menus, memory and interrupt status, keyboard editing/history, and mapping commands. These visual interactions are not covered by the serial script.
 
 ## Audit and limits
 

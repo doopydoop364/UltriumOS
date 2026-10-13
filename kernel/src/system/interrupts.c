@@ -62,6 +62,18 @@ static bool ioapic_route(unsigned gsi, uint8_t vector, uint8_t destination,
     return true;
 }
 
+static bool ioapic_mask_all(void) {
+    if (!io_apic) return false;
+    io_apic[0] = 1;
+    uint32_t version = io_apic[4];
+    unsigned maximum_gsi = (version >> 16) & 0xff;
+    for (unsigned gsi = 0; gsi <= maximum_gsi; ++gsi) {
+        io_apic[0] = 0x10 + gsi * 2;
+        io_apic[4] |= 1u << 16;
+    }
+    return true;
+}
+
 static bool local_apic_prepare(void) {
     uint32_t eax, ebx, ecx, edx;
     eax = 1;
@@ -157,6 +169,7 @@ bool interrupts_init(void) {
     if (!ioapic_page) return false;
     io_apic = (volatile uint32_t *)ioapic_page;
     pic_remap();
+    if (!ioapic_mask_all()) return false;
     for (unsigned irq = 0; irq < IRQ_COUNT; ++irq)
         if (!exceptions_install_irq_gate(IRQ_BASE + irq, irq_stubs[irq]))
             return false;
@@ -165,7 +178,8 @@ bool interrupts_init(void) {
     outb(PIT_CHANNEL0, (uint8_t)(divisor & 0xff));
     outb(PIT_CHANNEL0, (uint8_t)(divisor >> 8));
     uint32_t apic_id = local_apic[0x20 / sizeof(uint32_t)] >> 24;
-    if (!ioapic_route(2, IRQ_BASE, (uint8_t)apic_id, false)) return false;
+    if (!ioapic_route(2, IRQ_BASE, (uint8_t)apic_id, false) ||
+        !ioapic_route(1, IRQ_BASE + 1, (uint8_t)apic_id, true)) return false;
     initialized = true;
     __asm__ volatile("sti" ::: "memory");
     return true;
