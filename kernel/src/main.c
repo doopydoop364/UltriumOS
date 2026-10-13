@@ -44,6 +44,7 @@ static void hcf(void) {
 }
 
 #include "terminal/terminal.h"
+#include "shell.h"
 
 void kmain(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) hcf();
@@ -54,11 +55,11 @@ void kmain(void) {
 
     terminal_init(fb);
     terminal_write_color("ULTRIUM", TERMINAL_ACCENT);
-    terminal_write(" OS  0.0.2\n\n");
+    terminal_write(" OS  0.0.3\n\n");
     terminal_write("KERNEL LOADED\n");
     terminal_write("FRAMEBUFFER READY\n");
     terminal_write_color("CLI MODE\n", TERMINAL_ACCENT);
-    terminal_write_color("KEYBOARD INPUT NOT YET AVAILABLE\n\n", TERMINAL_MUTED);
-    terminal_write_color("ULTRIUM> ", TERMINAL_ACCENT);
+    terminal_write("INTERACTIVE SHELL READY\n\n");
+    shell_run();
     hcf();
 }

@@ -134,7 +134,8 @@ void terminal_putc_color(char ch, enum terminal_color color) {
     if (cursor_x + 5 * SCALE + MARGIN > screen->width) terminal_newline();
     uint32_t selected = color == TERMINAL_ACCENT ? accent :
                         color == TERMINAL_MUTED ? muted : ink;
-    draw_text(screen, (char[]){ch, '\0'}, cursor_x, cursor_y, SCALE, selected);
+    char display = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+    draw_text(screen, (char[]){display, '\0'}, cursor_x, cursor_y, SCALE, selected);
     cursor_x += ADVANCE;
 }
 
@@ -143,3 +144,11 @@ void terminal_write_color(const char *s, enum terminal_color color) {
     while (*s) terminal_putc_color(*s++, color);
 }
 void terminal_write(const char *s) { terminal_write_color(s, TERMINAL_NORMAL); }
+
+void terminal_backspace(void) {
+    if (!screen || cursor_x <= MARGIN) return;
+    cursor_x -= ADVANCE;
+    for (uint64_t y = cursor_y; y < cursor_y + 7 * SCALE && y < screen->height; ++y)
+        for (uint64_t x = cursor_x; x < cursor_x + ADVANCE && x < screen->width; ++x)
+            put_pixel(screen, x, y, background);
+}
