@@ -1,4 +1,4 @@
-# Ultrium Shell (USH 0.4)
+# Ultrium Shell (USH 0.5)
 
 **Simple actions should be short. Complex operations should be structured. Everything should be discoverable.**
 
@@ -121,3 +121,7 @@ RAMFS is volatile: names 31 bytes, paths 127 bytes, files 4096 bytes, total data
 The registry and shared VFS APIs provide extension points for future discovery, applications, completion metadata and structured execution. Capability requirements, structured results and scripting need explicit designs when implemented; existing string handlers do not claim those features.
 
 Milestones: USH 0.1 native commands/compatibility; 0.2 registry/help; 0.3 safe operations; 0.4 quoting/completion; 0.5 authorization architecture. See [validation](ush-validation.md) and [kernel testing](kernel-testing.md).
+
+## USH 0.5 authorization design
+
+`auth` requests temporary action-specific authorization; `as` executes one command under another authorized identity. **Both are planned and unavailable.** No identity-changing command or password prompt exists. The kernel lacks the necessary userspace/process/security boundaries. USH 0.5 denotes the completed architecture milestone, not implemented privilege isolation. See [authorization architecture](authorization-architecture.md) for capability scopes, trusted human approval, agent restrictions, auditing, revocation and kernel prerequisites.

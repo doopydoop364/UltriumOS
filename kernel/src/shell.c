@@ -159,7 +159,7 @@ static const struct ush_command registry[] = {
     B("all","ultrium test","All kernel suites",kernel_tests_all),
     G("ai","ultrium","AI namespace; services unavailable"),
     B("status","ultrium ai","Report service availability",ai_status),
-    G("shell","ultrium","Ultrium Shell (USH)"),
+    G("shell","ultrium","Ultrium Shell; auth/as planned and unavailable (no privilege boundary)"),
     B("version","ultrium shell","USH component version",ush_version),
     G("compatibility","ultrium shell","Session-only aliases; disabled at boot"),
     B("status","ultrium shell compatibility","Show alias availability",ush_compatibility_status),

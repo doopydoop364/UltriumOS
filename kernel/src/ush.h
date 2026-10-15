@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "fs/vfs.h"
-#define USH_VERSION "0.4"
+#define USH_VERSION "0.5"
 #define USH_INPUT_MAX 70U
 #define USH_ARG_MAX 16U
 enum ush_result { USH_OK, USH_UNKNOWN, USH_USAGE, USH_UNAVAILABLE, USH_FS_ERROR, USH_PENDING };
