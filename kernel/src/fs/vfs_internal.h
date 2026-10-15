@@ -4,6 +4,7 @@
 #include "vfs.h"
 
 struct vfs_backend_ops {
+    enum vfs_error (*stat)(const char *path, struct vfs_info *out);
     enum vfs_error (*create_file)(const char *path);
     enum vfs_error (*create_directory)(const char *path);
     enum vfs_error (*unlink)(const char *path);

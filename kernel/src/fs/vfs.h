@@ -34,6 +34,9 @@ enum vfs_open_flags { VFS_OPEN_READ = 1U, VFS_OPEN_WRITE = 2U };
 struct vfs_file { uint32_t slot; uint32_t generation; };
 struct vfs_dir { uint32_t slot; uint32_t generation; };
 
+struct vfs_info { enum vfs_node_type type; size_t size; };
+enum vfs_error vfs_stat(const char *absolute_path, struct vfs_info *out);
+
 bool vfs_init(void);
 enum vfs_error vfs_normalize(const char *path, const char *cwd,
                              char *output, size_t capacity);

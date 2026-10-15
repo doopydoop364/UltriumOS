@@ -11,6 +11,7 @@
 #include "tests/tests.h"
 #include "fs/vfs.h"
 #include "version.h"
+#include "ush.h"
 
 /* Built-in Ultrium commands and future external programs have separate dispatch paths. */
 typedef void (*command_handler)(void);
@@ -20,7 +21,6 @@ static int same(const char *a, const char *b) {
     while (*a && *b && *a == *b) { ++a; ++b; }
     return *a == *b;
 }
-static char shell_cwd[VFS_PATH_MAX + 1U] = "/";
 static void normalize(char *line) {
     size_t read = 0, write = 0;
     while (line[read] == ' ') ++read;
@@ -53,7 +53,7 @@ static void help(void) {
     terminal_write("  ultrium ai  AI commands (ultrium ai help)\n");
     terminal_write("  clear       Clear commands (clear help)\n");
     terminal_write("General commands:\n");
-    terminal_write("  help, reboot, pwd, ls, cd, mkdir, touch, write, cat, rm\n");
+    terminal_write("  help, reboot, list, go, where, new file/folder, view, write, remove, info\n");
     terminal_write("Shortcuts: Left/Right, Home/End, Delete, Ctrl+C/U/W/L\n");
 }
 static void clear_help(void) {
@@ -68,6 +68,7 @@ static void ultrium_help(void) {
     terminal_write("  ultrium system help  (System namespace)\n");
     terminal_write("  ultrium test help  (Kernel tests)\n");
     terminal_write("  ultrium ai help  (AI namespace)\n");
+    terminal_write("  ultrium shell help  (Ultrium Shell)\n");
 }
 static void system_help(void) {
     terminal_write("Ultrium system commands:\n");
@@ -193,166 +194,6 @@ static void ai_status(void) { terminal_write("AI services are not installed.\n")
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 
-static const char *skip_spaces(const char *text) {
-    while (*text == ' ') ++text;
-    return text;
-}
-
-static bool command_word(const char *line, const char *word,
-                        const char **arguments) {
-    size_t i = 0;
-    while (word[i] && line[i] == word[i]) ++i;
-    if (word[i] || (line[i] && line[i] != ' ')) return false;
-    if (arguments) *arguments = skip_spaces(line + i);
-    return true;
-}
-
-static enum vfs_error shell_path(const char *argument,
-                                 char path[VFS_PATH_MAX + 1U]) {
-    return vfs_normalize(argument, shell_cwd, path, VFS_PATH_MAX + 1U);
-}
-
-static void fs_error(enum vfs_error error) {
-    terminal_write("Filesystem operation failed: ");
-    switch (error) {
-        case VFS_NOT_FOUND: terminal_write("not found\n"); break;
-        case VFS_EXISTS: terminal_write("already exists\n"); break;
-        case VFS_NOT_DIRECTORY: terminal_write("not a directory\n"); break;
-        case VFS_IS_DIRECTORY: terminal_write("is a directory\n"); break;
-        case VFS_NO_SPACE: terminal_write("out of memory or capacity\n"); break;
-        case VFS_INVALID_PATH: terminal_write("invalid path\n"); break;
-        default: terminal_write("unsupported or invalid operation\n"); break;
-    }
-}
-
-static void fs_help(const char *command) {
-    terminal_write(command);
-    terminal_write(" usage: ");
-    terminal_write(command);
-    if (same(command, "pwd")) terminal_write("\n");
-    else if (same(command, "ls")) terminal_write(" [path]\n");
-    else terminal_write(" path\n");
-}
-
-static bool dispatch_filesystem(const char *line) {
-    const char *arguments;
-    char path[VFS_PATH_MAX + 1U];
-    if (command_word(line, "pwd", &arguments)) {
-        if (same(arguments, "help")) { fs_help("pwd"); return true; }
-        if (*arguments) { fs_error(VFS_INVALID_PATH); return true; }
-        terminal_write(shell_cwd); terminal_write("\n");
-        return true;
-    }
-    if (command_word(line, "ls", &arguments)) {
-        if (same(arguments, "help")) { fs_help("ls"); return true; }
-        if (!*arguments) {
-            size_t i = 0; do { path[i] = shell_cwd[i]; } while (shell_cwd[i++]);
-        } else if (shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        struct vfs_dir dir = {0};
-        enum vfs_error error = vfs_dir_open(path, &dir);
-        if (error != VFS_OK) { fs_error(error); return true; }
-        char name[VFS_NAME_MAX + 1U];
-        enum vfs_node_type type;
-        while ((error = vfs_dir_next(&dir, name, sizeof(name), &type)) == VFS_OK) {
-            terminal_write(name);
-            if (type == VFS_NODE_DIRECTORY) terminal_write("/");
-            terminal_write("\n");
-        }
-        if (error != VFS_END) fs_error(error);
-        vfs_dir_close(&dir);
-        return true;
-    }
-    if (command_word(line, "cd", &arguments)) {
-        if (same(arguments, "help")) { fs_help("cd"); return true; }
-        if (!*arguments || shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        if (!vfs_is_directory(path)) { fs_error(VFS_NOT_DIRECTORY); return true; }
-        size_t i = 0; do { shell_cwd[i] = path[i]; } while (path[i++]);
-        return true;
-    }
-    if (command_word(line, "mkdir", &arguments)) {
-        if (same(arguments, "help")) { fs_help("mkdir"); return true; }
-        if (!*arguments || shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        enum vfs_error error = vfs_create_directory(path);
-        if (error != VFS_OK) fs_error(error);
-        return true;
-    }
-    if (command_word(line, "touch", &arguments)) {
-        if (same(arguments, "help")) { fs_help("touch"); return true; }
-        if (!*arguments || shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        enum vfs_error error = vfs_create_file(path);
-        if (error == VFS_EXISTS) {
-            if (vfs_is_directory(path)) fs_error(VFS_IS_DIRECTORY);
-            else error = VFS_OK;
-        }
-        if (error != VFS_OK) fs_error(error);
-        return true;
-    }
-    if (command_word(line, "write", &arguments)) {
-        if (same(arguments, "help")) {
-            terminal_write("write usage: write path text (creates a new file)\n");
-            return true;
-        }
-        size_t name_length = 0;
-        while (arguments[name_length] && arguments[name_length] != ' ') ++name_length;
-        const char *contents = skip_spaces(arguments + name_length);
-        if (!name_length || name_length > VFS_PATH_MAX || !*contents) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        char name[VFS_PATH_MAX + 1U];
-        for (size_t i = 0; i < name_length; ++i) name[i] = arguments[i];
-        name[name_length] = 0;
-        if (shell_path(name, path) != VFS_OK) { fs_error(VFS_INVALID_PATH); return true; }
-        enum vfs_error error = vfs_create_file(path);
-        if (error != VFS_OK) { fs_error(error); return true; }
-        struct vfs_file file = {0};
-        error = vfs_file_open(path, VFS_OPEN_WRITE, &file);
-        size_t written = 0, content_length = 0;
-        while (contents[content_length]) ++content_length;
-        if (error == VFS_OK)
-            error = vfs_file_write(&file, contents, content_length, &written);
-        if (file.generation && vfs_file_close(&file) != VFS_OK) error = VFS_BAD_HANDLE;
-        if (error != VFS_OK || written != content_length) {
-            vfs_unlink(path);
-            fs_error(error == VFS_OK ? VFS_NO_SPACE : error);
-        }
-        return true;
-    }
-    if (command_word(line, "rm", &arguments)) {
-        if (same(arguments, "help")) { fs_help("rm"); return true; }
-        if (!*arguments || shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        enum vfs_error error = vfs_unlink(path);
-        if (error != VFS_OK) fs_error(error);
-        return true;
-    }
-    if (command_word(line, "cat", &arguments)) {
-        if (same(arguments, "help")) { fs_help("cat"); return true; }
-        if (!*arguments || shell_path(arguments, path) != VFS_OK) {
-            fs_error(VFS_INVALID_PATH); return true;
-        }
-        struct vfs_file file = {0};
-        enum vfs_error error = vfs_file_open(path, VFS_OPEN_READ, &file);
-        if (error != VFS_OK) { fs_error(error); return true; }
-        char buffer[128];
-        size_t count;
-        while ((error = vfs_file_read(&file, buffer, sizeof(buffer), &count)) == VFS_OK && count)
-            for (size_t i = 0; i < count; ++i) terminal_putc_color(buffer[i], TERMINAL_NORMAL);
-        if (error != VFS_OK) fs_error(error);
-        vfs_file_close(&file);
-        return true;
-    }
-    return false;
-}
-
 static const struct command commands[] = {
     {"help", ultrium_help}, {"version", version},
     {"system help", system_help}, {"system info", system_info},
@@ -372,6 +213,12 @@ static const struct command commands[] = {
     {"test filesystem help", test_filesystem_help},
     {"test filesystem", kernel_tests_filesystem},
     {"test all", kernel_tests_all},
+    {"shell help", ush_help}, {"shell version", ush_version},
+    {"shell compatibility help", ush_compatibility_help},
+    {"shell compatibility status", ush_compatibility_status},
+    {"shell compatibility enable", ush_compatibility_enable},
+    {"shell compatibility disable", ush_compatibility_disable},
+    {"test shell", kernel_tests_shell},
     {"ai help", ai_help}, {"ai status", ai_status},
 };
 static void dispatch(const char *line) {
@@ -380,7 +227,7 @@ static void dispatch(const char *line) {
     if (same(line, "clear")) { clear(); return; }
     if (same(line, "clear help")) { clear_help(); return; }
     if (same(line, "clear history")) { clear_history(); return; }
-    if (dispatch_filesystem(line)) return;
+    if (ush_execute(line) != USH_UNKNOWN) return;
     if (same(line, "reboot")) {
         terminal_write("Rebooting...\n");
         system_reboot();

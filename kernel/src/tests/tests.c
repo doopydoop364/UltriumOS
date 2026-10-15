@@ -12,6 +12,7 @@
 #include "keyboard/keyboard.h"
 #include "fs/vfs.h"
 #include "memory.h"
+#include "ush.h"
 
 /* COM1 is only used for test results. A missing UART never blocks the CLI. */
 static bool serial_ready;
@@ -673,6 +674,47 @@ cleanup:
     return error;
 }
 
+static const char *shell_native(void) {
+    uint64_t allocations = heap_live_allocations(), frames = pmm_free_pages();
+    const char *reason = 0;
+    if (ush_execute("new folder /ush-test") != USH_OK ||
+        ush_execute("go /ush-test") != USH_OK ||
+        ush_execute("write data Hello Ultrium") != USH_OK) reason = "native create/write/go failed";
+    struct vfs_info info;
+    if (!reason && (vfs_stat("/ush-test/data", &info) != VFS_OK || info.size != 13 ||
+        ush_execute("where") != USH_OK || ush_execute("list") != USH_OK ||
+        ush_execute("view data") != USH_OK || ush_execute("info data") != USH_OK))
+        reason = "native read/list/stat failed";
+    if (ush_execute("go /") != USH_OK) reason = "cwd cleanup failed";
+    if (ush_execute("remove /ush-test/data") != USH_OK ||
+        ush_execute("remove /ush-test") != USH_OK) reason = "native remove failed";
+    if (heap_live_allocations() != allocations || pmm_free_pages() != frames) reason = "native commands leaked";
+    return reason;
+}
+static const char *shell_aliases(void) {
+    bool saved = ush_compatibility();
+    const char *reason = 0;
+    ush_compatibility_disable();
+    if (ush_compatibility() || ush_execute("ls") != USH_UNAVAILABLE)
+        reason = "native mode accepted alias";
+    ush_compatibility_enable();
+    if (!ush_compatibility() || ush_execute("mkdir /ush-alias") != USH_OK ||
+        ush_execute("touch /ush-alias/a") != USH_OK ||
+        ush_execute("ls /ush-alias") != USH_OK || ush_execute("cat /ush-alias/a") != USH_OK ||
+        ush_execute("cd /ush-alias") != USH_OK || ush_execute("pwd") != USH_OK ||
+        ush_execute("cd /") != USH_OK || ush_execute("rm /ush-alias/a") != USH_OK ||
+        ush_execute("rm /ush-alias") != USH_OK) reason = "enabled aliases failed";
+    ush_compatibility_disable();
+    if (ush_execute("pwd") != USH_UNAVAILABLE || ush_execute("no-such-command") != USH_UNKNOWN ||
+        ush_execute("go") != USH_USAGE || ush_execute("where extra") != USH_USAGE)
+        reason = "disable or invalid command behavior failed";
+    if (saved) ush_compatibility_enable();
+    return reason;
+}
+static const struct test_case shell_cases[] = {
+    {"USH native commands", shell_native}, {"USH compatibility and errors", shell_aliases}
+};
+
 static const struct test_case memory_cases[] = {
     {"exception TSS/IST", exception_descriptors},
     {"physical self", physical_self}, {"physical ownership", physical_ownership},
@@ -723,12 +765,14 @@ static void run(const struct test_case *cases, size_t count) {
 void kernel_tests_memory(void) { run(memory_cases, sizeof(memory_cases)/sizeof(memory_cases[0])); }
 void kernel_tests_interrupts(void) { run(interrupt_cases, sizeof(interrupt_cases)/sizeof(interrupt_cases[0])); }
 void kernel_tests_filesystem(void) { run(filesystem_cases, sizeof(filesystem_cases)/sizeof(filesystem_cases[0])); }
+void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
-        sizeof(filesystem_cases)/sizeof(filesystem_cases[0])
+        sizeof(filesystem_cases)/sizeof(filesystem_cases[0]),
+        sizeof(shell_cases)/sizeof(shell_cases[0])
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

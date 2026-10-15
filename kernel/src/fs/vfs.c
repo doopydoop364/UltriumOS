@@ -124,3 +124,7 @@ enum vfs_error vfs_dir_next(struct vfs_dir *dir, char *name, size_t capacity,
 enum vfs_error vfs_dir_close(struct vfs_dir *dir) {
     return backend ? backend->dir_close(dir) : VFS_BAD_HANDLE;
 }
+
+enum vfs_error vfs_stat(const char *path, struct vfs_info *out) {
+    return backend ? backend->stat(path, out) : VFS_BAD_HANDLE;
+}
