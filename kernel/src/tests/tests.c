@@ -700,6 +700,9 @@ static const char *shell_aliases(void) {
     ush_compatibility_enable();
     if (!ush_compatibility() || ush_execute("mkdir /ush-alias") != USH_OK ||
         ush_execute("touch /ush-alias/a") != USH_OK ||
+        ush_execute("cp /ush-alias/a /ush-alias/b") != USH_OK ||
+        ush_execute("mv /ush-alias/b /ush-alias/c") != USH_OK ||
+        ush_execute("rm /ush-alias/c") != USH_OK ||
         ush_execute("ls /ush-alias") != USH_OK || ush_execute("cat /ush-alias/a") != USH_OK ||
         ush_execute("cd /ush-alias") != USH_OK || ush_execute("pwd") != USH_OK ||
         ush_execute("cd /") != USH_OK || ush_execute("rm /ush-alias/a") != USH_OK ||
@@ -909,7 +912,136 @@ cleanup:
 }
 #undef FS_REQUIRE
 
+static const char *shell_quoting(void) {
+    const char *reason = 0;
+    struct ush_args args; struct vfs_info info; struct vfs_remove_report report;
+    if (ush_tokenize("write \"a b\" 'c d' \"\" x\\ y \\\"quote\\\"", &args) != USH_OK || args.count != 6 ||
+        memcmp(args.values[1], "a b", 4) || memcmp(args.values[2], "c d", 4) ||
+        args.values[3][0] || memcmp(args.values[4], "x y", 4) || memcmp(args.values[5], "\"quote\"", 8))
+        return "quoted/escaped/empty tokens incorrect";
+    if (ush_tokenize("new file \"unfinished", &args) != USH_USAGE || !args.error ||
+        ush_tokenize("write a trailing\\", &args) != USH_USAGE ||
+        ush_tokenize("a b c d e f g h i j k l m n o p q", &args) != USH_USAGE)
+        return "invalid token grammar accepted";
+    char line[USH_INPUT_MAX+2];
+    memset(line, 'a', USH_INPUT_MAX+1); line[USH_INPUT_MAX+1] = 0;
+    if (ush_tokenize(line, &args) != USH_USAGE) return "overlong input silently truncated";
+    line[USH_INPUT_MAX] = 0;
+    if (ush_tokenize(line, &args) != USH_OK) return "exact input boundary rejected";
+    if (ush_execute("new folder \"/ush quote\"") != USH_OK ||
+        ush_execute("go \"/ush quote\"") != USH_OK ||
+        ush_execute("write \"project notes.txt\" \"Hello  Ultrium\"") != USH_OK ||
+        vfs_stat("/ush quote/project notes.txt", &info) != VFS_OK || info.size != 14 ||
+        ush_execute("write empty \"\"") != USH_OK || vfs_stat("/ush quote/empty", &info) != VFS_OK || info.size ||
+        ush_execute("new file \"\"") != USH_FS_ERROR ||
+        ush_execute("new file \"unfinished") != USH_USAGE) reason = "quoted filesystem operations failed";
+    ush_execute("go /");
+    if (vfs_remove_tree("/ush quote", &report) != VFS_OK && !reason) reason = "quote cleanup failed";
+    return reason;
+}
+static const char *shell_completion(void) {
+    const char *reason = 0;
+    struct vfs_remove_report report;
+    if (vfs_create_directory("/ush-complete") != VFS_OK ||
+        vfs_create_directory("/ush-complete/My Folder") != VFS_OK ||
+        vfs_create_file("/ush-complete/apple") != VFS_OK ||
+        vfs_create_file("/ush-complete/apricot") != VFS_OK ||
+        vfs_create_file("/ush-complete/My Folder/notes.txt") != VFS_OK) return "completion fixture failed";
+    struct completion_case { const char *input, *expected; enum ush_completion result; };
+    const struct completion_case cases[] = {
+        {"wher", "where ", USH_COMPLETE_UNIQUE},
+        {"ultrium sh", "ultrium shell ", USH_COMPLETE_UNIQUE},
+        {"file cop", "file copy ", USH_COMPLETE_UNIQUE},
+        {"go /ush-complete/My", "go \"/ush-complete/My Folder/\"", USH_COMPLETE_UNIQUE},
+        {"view \"/ush-complete/My Folder/no", "view \"/ush-complete/My Folder/notes.txt\" ", USH_COMPLETE_UNIQUE},
+        {"view /ush-complete/a", "view /ush-complete/ap", USH_COMPLETE_MULTIPLE},
+        {"view /ush-complete/no-such", "view /ush-complete/no-such", USH_COMPLETE_NONE}
+    };
+    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+        char line[USH_INPUT_MAX+1]; size_t n = 0;
+        do { line[n] = cases[i].input[n]; } while (cases[i].input[n++]);
+        size_t caret = n-1;
+        enum ush_completion result = ush_complete(line, &caret);
+        size_t expected_length = 0; while (cases[i].expected[expected_length]) ++expected_length;
+        if (result != cases[i].result || memcmp(line, cases[i].expected, expected_length+1)) {
+            reason = "command/namespace/path completion incorrect"; break;
+        }
+    }
+    char middle[USH_INPUT_MAX+1] = "file copx source target"; size_t caret = 8;
+    if (ush_complete(middle, &caret) != USH_COMPLETE_UNIQUE ||
+        memcmp(middle, "file copy source target", sizeof("file copy source target"))) reason = "middle completion damaged suffix";
+    char boundary[USH_INPUT_MAX+1], preserved[USH_INPUT_MAX+1];
+    const char *partial = "view /ush-complete/appl"; size_t used = 0;
+    while (partial[used]) { boundary[used] = partial[used]; ++used; }
+    for (size_t i = used; i < USH_INPUT_MAX; ++i) boundary[i] = ' ';
+    boundary[USH_INPUT_MAX] = 0; memcpy(preserved, boundary, sizeof(boundary));
+    if (ush_complete(boundary, &used) != USH_COMPLETE_LIMIT || memcmp(boundary, preserved, sizeof(boundary)))
+        reason = "overlong completion silently truncated or changed input";
+    if (!ush_suggest("", "lst") || memcmp(ush_suggest("", "lst"), "list", 5) ||
+        !ush_suggest("ultrium", "sysem") || ush_suggest("", "zzzzzzzz")) reason = "bounded suggestions incorrect";
+    if (vfs_remove_tree("/ush-complete", &report) != VFS_OK && !reason) reason = "completion cleanup failed";
+    return reason;
+}
+static const char *shell_help_output(void) {
+    const char *reason = 0;
+    terminal_test_capture(1);
+    ush_execute("ultrium help"); terminal_test_capture(0);
+    if (!terminal_test_contains("system") || !terminal_test_contains("shell") ||
+        terminal_test_contains("mapping") || terminal_test_contains("compatibility")) reason = "parent help flattened descendants";
+    terminal_test_capture(1);
+    ush_execute("lst"); terminal_test_capture(0);
+    if (!terminal_test_contains("Unknown command: lst") || !terminal_test_contains("Did you mean: list?"))
+        reason = "unknown-command suggestion missing";
+    terminal_test_capture(1);
+    ush_execute("new file \"unterminated"); terminal_test_capture(0);
+    if (!terminal_test_contains("Unterminated quote.")) reason = "quote error not useful";
+    return reason;
+}
+
+static bool interactive_active, interactive_initial;
+static uint64_t interactive_allocations, interactive_frames;
+void kernel_tests_shell_interactive_begin(void) {
+    interactive_active = true;
+    interactive_initial = !ush_compatibility() && !memcmp(ush_cwd(), "/", 2);
+    interactive_allocations = heap_live_allocations(); interactive_frames = pmm_free_pages();
+    terminal_test_capture(1);
+    terminal_write("USH interactive capture started.\n");
+}
+static const char *shell_interactive_session(void) {
+    terminal_test_capture(0);
+    if (!interactive_active) return "start with ultrium test shell begin";
+    const char *reason = 0;
+    struct vfs_info info; struct vfs_file file = {0}; struct vfs_remove_report report;
+    char text[32] = {0}; size_t count = 0;
+    if (!interactive_initial || ush_compatibility() || !vfs_is_directory("/keyboard/My Projects") ||
+        vfs_stat("/keyboard/My Projects/project notes.txt", &info) != VFS_OK || info.size != 13 ||
+        vfs_file_open("/keyboard/My Projects/project notes.txt", VFS_OPEN_READ, &file) != VFS_OK ||
+        vfs_file_read(&file, text, sizeof(text), &count) != VFS_OK || count != 13 || memcmp(text, "Hello Ultrium", 13))
+        reason = "keyboard quoting, initial native mode, or file content failed";
+    if (file.generation) vfs_file_close(&file);
+    if (vfs_stat("/keyboard/My Projects/mid", &info) != VFS_OK ||
+        !vfs_is_directory("/keyboard/My Projects/history") ||
+        vfs_stat("/keyboard/boundary", &info) != VFS_NOT_FOUND ||
+        vfs_stat("/keyboard/My Projects/unfinished", &info) != VFS_NOT_FOUND ||
+        vfs_stat("/keyboard/remove", &info) != VFS_NOT_FOUND)
+        reason = "middle editing, history, input limit, parse rejection, or confirmed removal failed";
+    const char *expected[] = {"Use 'list' instead.", "Hello Ultrium", "Compatibility aliases: disabled",
+        "/keyboard/My Projects", "apple", "apricot", "Unterminated quote.", "Did you mean: list?",
+        "Input exceeds 70 characters; command rejected.", "Removal cancelled.", "Removed items: 2",
+        "Removed: /keyboard/remove/a"};
+    for (size_t i = 0; i < sizeof(expected)/sizeof(expected[0]); ++i)
+        if (!terminal_test_contains(expected[i])) reason = "keyboard output contract missing or capture overflowed";
+    ush_execute("go /");
+    if (vfs_remove_tree("/keyboard", &report) != VFS_OK && !reason) reason = "interactive cleanup failed";
+    if (heap_live_allocations() != interactive_allocations || pmm_free_pages() != interactive_frames)
+        reason = "interactive commands leaked memory";
+    interactive_active = false;
+    return reason;
+}
 static const struct test_case shell_cases[] = {
+    {"USH quoting and limits", shell_quoting},
+    {"USH completion and suggestions", shell_completion},
+    {"USH help and error output", shell_help_output},
     {"USH safe operations", shell_safe_operations},
     {"USH registry and help", shell_registry},
     {"USH native commands", shell_native}, {"USH compatibility and errors", shell_aliases}
@@ -983,4 +1115,9 @@ void kernel_tests_all(void) {
 void kernel_test_slab_stress(void) {
     const struct test_case legacy_slab_case = {"slab stress", slab_stress};
     run(&legacy_slab_case, 1);
+}
+
+void kernel_tests_shell_interactive(void) {
+    const struct test_case test = {"USH QMP interactive session", shell_interactive_session};
+    run(&test, 1);
 }

@@ -119,6 +119,7 @@ static int translate_scancode(uint8_t code) {
     }
     if (code == 0x1c) return '\n';
     if (code == 0x0e) return '\b';
+    if (code == 0x0f) return '\t';
     if (code == 0x39) return ' ';
     static const char plain[58] = {
         [0x02]='1', [0x03]='2', [0x04]='3', [0x05]='4', [0x06]='5',

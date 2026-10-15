@@ -84,7 +84,28 @@ void terminal_newline(void) {
     scroll_if_needed();
 }
 
+static char test_output[8192];
+static size_t test_length;
+static int test_capture, test_overflow;
+void terminal_test_capture(int enabled) {
+    test_capture = enabled;
+    if (enabled) { test_length = 0; test_output[0] = 0; test_overflow = 0; }
+}
+int terminal_test_contains(const char *text) {
+    if (test_overflow) return 0;
+    for (size_t i = 0; i <= test_length; ++i) {
+        size_t j = 0;
+        while (text[j] && i+j < test_length && test_output[i+j] == text[j]) ++j;
+        if (!text[j]) return 1;
+    }
+    return 0;
+}
 void terminal_putc_color(char ch, enum terminal_color color) {
+    if (test_capture) {
+        if (test_length + 1 < sizeof(test_output)) {
+            test_output[test_length++] = ch; test_output[test_length] = 0;
+        } else test_overflow = 1;
+    }
     if (!screen) return;
     if (ch == '\n') { terminal_newline(); return; }
     if (ch == '\r') { cursor_x = MARGIN; return; }
@@ -119,18 +140,23 @@ void terminal_cursor(int visible) {
             put_pixel(screen, x, y, color);
 }
 
-/* The shell edits on one row; keep its prompt anchor and redraw glyphs. */
+/* One-row editing with a horizontal viewport; the caret always stays visible.
+   Completion listings reanchor input through terminal_input_begin(). */
 static uint64_t input_x, input_y;
 void terminal_input_begin(void) { input_x = cursor_x; input_y = cursor_y; }
 void terminal_input_redraw(const char *line, unsigned length, unsigned caret) {
     if (!screen || !line || length > 70 || caret > length) return;
-    for (unsigned i = 0; i <= 70; ++i) {
+    uint64_t columns = screen->width > input_x + MARGIN ?
+        (screen->width - input_x - MARGIN) / ADVANCE : 0;
+    if (!columns) return;
+    if (columns > 71) columns = 71;
+    unsigned start = caret >= columns ? caret - (unsigned)columns + 1 : 0;
+    for (unsigned i = 0; i < columns; ++i) {
         uint64_t x = input_x + (uint64_t)i * ADVANCE;
-        if (x + ADVANCE + MARGIN > screen->width) break;
         for (uint64_t y = input_y; y < input_y + GLYPH_HEIGHT && y < screen->height; ++y)
             for (uint64_t px = x; px < x + ADVANCE; ++px) put_pixel(screen, px, y, background);
-        if (i < length) draw_character(screen, line[i], x, input_y, ink);
+        if (start + i < length) draw_character(screen, line[start + i], x, input_y, ink);
     }
-    cursor_x = input_x + (uint64_t)caret * ADVANCE;
+    cursor_x = input_x + (uint64_t)(caret - start) * ADVANCE;
     cursor_y = input_y;
 }

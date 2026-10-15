@@ -12,35 +12,11 @@
 #include "fs/vfs.h"
 #include "version.h"
 #include "ush.h"
+#include "memory.h"
 
 static int same(const char *a, const char *b) {
     while (*a && *b && *a == *b) { ++a; ++b; }
     return *a == *b;
-}
-static void normalize(char *line) {
-    size_t read = 0, write = 0;
-    while (line[read] == ' ') ++read;
-    int space = 0;
-    while (line[read]) {
-        char ch = line[read++];
-        if (ch == ' ') { space = write > 0; continue; }
-        if (space) { line[write++] = ' '; space = 0; }
-        line[write++] = ch;
-    }
-    line[write] = 0;
-    size_t first_length = 0;
-    while (line[first_length] && line[first_length] != ' ') ++first_length;
-    for (size_t i = 0; i < first_length; ++i)
-        if (line[i] >= 'A' && line[i] <= 'Z')
-            line[i] = (char)(line[i] + ('a' - 'A'));
-    bool namespace_command =
-        (first_length == 7 && line[0] == 'u' && line[1] == 'l' && line[2] == 't' &&
-         line[3] == 'r' && line[4] == 'i' && line[5] == 'u' && line[6] == 'm') ||
-        (first_length == 5 && line[0] == 'c' && line[1] == 'l' && line[2] == 'e' &&
-         line[3] == 'a' && line[4] == 'r');
-    for (size_t i = first_length; namespace_command && line[i]; ++i)
-        if (line[i] >= 'A' && line[i] <= 'Z')
-            line[i] = (char)(line[i] + ('a' - 'A'));
 }
 static void prompt(void) {
     terminal_write_color(ush_confirmation_pending() ? ush_confirmation_prompt() : "ultrium> ", TERMINAL_ACCENT);
@@ -125,7 +101,7 @@ struct ush_command {
 #define G(n,p,d) {n,p,d,"",0,0,0,0,false}
 #define N(n,p,d,u,o,lo,hi) {n,p,d,u,o,0,lo,hi,false}
 #define B(n,p,d,f) {n,p,d,"",0,f,0,0,false}
-#define A(n,d,o,lo,hi) {n,"",d,"",o,0,lo,hi,true}
+#define A(n,d,u,o,lo,hi) {n,"",d,u,o,0,lo,hi,true}
 static const struct ush_command registry[] = {
     G("help", "", "Show help; also accepts a command path"),
     B("clear", "", "Clear screen", clear),
@@ -178,6 +154,8 @@ static const struct ush_command registry[] = {
     B("interrupts","ultrium test","Timer and keyboard IRQs",kernel_tests_interrupts),
     B("filesystem","ultrium test","VFS and RAMFS",kernel_tests_filesystem),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
+    B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
+    B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),
     B("all","ultrium test","All kernel suites",kernel_tests_all),
     G("ai","ultrium","AI namespace; services unavailable"),
     B("status","ultrium ai","Report service availability",ai_status),
@@ -187,9 +165,9 @@ static const struct ush_command registry[] = {
     B("status","ultrium shell compatibility","Show alias availability",ush_compatibility_status),
     B("enable","ultrium shell compatibility","Enable selected aliases",ush_compatibility_enable),
     B("disable","ultrium shell compatibility","Disable aliases",ush_compatibility_disable),
-    A("ls","list","list",0,1), A("cd","go","go",1,1), A("pwd","where","where",0,0),
-    A("mkdir","new folder","new folder",1,1), A("touch","new file","new file",1,1),
-    A("cat","view","view",1,1), A("rm","remove","remove",1,5), A("cp","copy","copy",2,2), A("mv","move","move",2,2)
+    A("ls","list","[path]","list",0,1), A("cd","go","path","go",1,1), A("pwd","where","","where",0,0),
+    A("mkdir","new folder","path","new folder",1,1), A("touch","new file","path","new file",1,1),
+    A("cat","view","path","view",1,1), A("rm","remove","path [-r] [-y]","remove",1,5), A("cp","copy","source destination","copy",2,2), A("mv","move","source destination","move",2,2)
 };
 #define COMMAND_COUNT (sizeof(registry)/sizeof(registry[0]))
 static const struct ush_command *child(const char *parent, const char *word) {
@@ -198,11 +176,14 @@ static const struct ush_command *child(const char *parent, const char *word) {
             return &registry[i];
     return 0;
 }
-static void append_word(char *path, const char *word) {
-    size_t n = 0; while (path[n]) ++n;
+static bool append_word(char *path, const char *word) {
+    size_t n = 0, count = 0;
+    while (path[n] && n < USH_INPUT_MAX) ++n;
+    while (word[count] && count < USH_INPUT_MAX) ++count;
+    if (n + (n ? 1U : 0U) + count > USH_INPUT_MAX) return false;
     if (n) path[n++] = ' ';
-    while (*word) path[n++] = *word++;
-    path[n] = 0;
+    for (size_t i = 0; i < count; ++i) path[n++] = word[i];
+    path[n] = 0; return true;
 }
 static void command_help(const struct ush_command *command, const char *path) {
     if (command) {
@@ -222,13 +203,20 @@ bool ush_registry_valid(void) {
     for (size_t i = 0; i < COMMAND_COUNT; ++i) {
         const struct ush_command *c = &registry[i];
         if (!c->name[0] || c->minimum > c->maximum || (c->operation && c->builtin)) return false;
+        if (c->operation) {
+            const char *operations[] = {"list","go","where","new file","new folder","view","write","remove","info","copy","move","rename"};
+            bool known = false;
+            for (size_t j = 0; j < sizeof(operations)/sizeof(operations[0]); ++j)
+                if (same(c->operation, operations[j])) known = true;
+            if (!known) return false;
+        }
         for (size_t j = 0; j < i; ++j)
             if (same(c->parent, registry[j].parent) && same(c->name, registry[j].name)) return false;
         if (!c->parent[0]) continue;
         bool found = false;
         for (size_t j = 0; j < COMMAND_COUNT; ++j) {
             char path[USH_INPUT_MAX + 1] = {0};
-            append_word(path, registry[j].parent); append_word(path, registry[j].name);
+            if (!append_word(path, registry[j].parent) || !append_word(path, registry[j].name)) return false;
             if (same(path, c->parent)) found = true;
         }
         if (!found) return false;
@@ -239,7 +227,7 @@ enum ush_result ush_execute(const char *line) {
     if (ush_confirmation_pending()) return USH_PENDING;
     struct ush_args args;
     if (ush_tokenize(line, &args) != USH_OK) {
-        terminal_write("Command exceeds input or argument limit.\n"); return USH_USAGE;
+        terminal_write(args.error); terminal_write("\n"); return USH_USAGE;
     }
     if (!args.count) return USH_OK;
     char path[USH_INPUT_MAX + 1] = {0};
@@ -267,6 +255,8 @@ enum ush_result ush_execute(const char *line) {
         (!command->operation && !command->builtin)) {
         terminal_write("Unknown command: "); terminal_write(args.values[used < args.count ? used : 0]);
         terminal_write(". Use 'help' or '<namespace> help'.\n");
+        const char *suggestion = ush_suggest(path, args.values[used < args.count ? used : 0]);
+        if (suggestion) { terminal_write("Did you mean: "); terminal_write(suggestion); terminal_write("?\n"); }
         return USH_UNKNOWN;
     }
     size_t count = args.count - used;
@@ -278,9 +268,158 @@ enum ush_result ush_execute(const char *line) {
     command->builtin(); return USH_OK;
 }
 static void dispatch(const char *line) { (void)ush_execute(line); }
+/* Completion is single-CPU shell work. Static scratch avoids growing the
+   kernel stack with 128 path-sized candidates; no allocations or IRQ use. */
+static char completion_candidates[VFS_NODE_MAX][VFS_PATH_MAX + 1U];
+static size_t completion_count;
+static size_t text_length(const char *s) { size_t n = 0; while (s[n]) ++n; return n; }
+static bool starts_with(const char *text, const char *prefix, bool fold) {
+    for (size_t i = 0; prefix[i]; ++i) {
+        if (!text[i]) return false;
+        char a = text[i], b = prefix[i];
+        if (fold) {
+            if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+            if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+        }
+        if (a != b) return false;
+    }
+    return true;
+}
+const char *ush_suggest(const char *parent, const char *word) {
+    size_t n = text_length(word);
+    if (!n || n > VFS_NAME_MAX) return 0;
+    unsigned best = 3;
+    const char *suggestion = 0;
+    for (size_t c = 0; c < COMMAND_COUNT; ++c) {
+        const struct ush_command *command = &registry[c];
+        if (!same(parent, command->parent) || (command->alias && !ush_compatibility())) continue;
+        size_t m = text_length(command->name);
+        if (m > VFS_NAME_MAX || n > m+2 || m > n+2) continue;
+        unsigned previous[VFS_NAME_MAX+1], current[VFS_NAME_MAX+1];
+        for (size_t j = 0; j <= m; ++j) previous[j] = (unsigned)j;
+        for (size_t i = 1; i <= n; ++i) {
+            current[0] = (unsigned)i;
+            for (size_t j = 1; j <= m; ++j) {
+                char a[2] = {word[i-1],0}, b[2] = {command->name[j-1],0};
+                unsigned replace = previous[j-1] + !ush_word_equal(a,b);
+                unsigned insert = current[j-1]+1, erase = previous[j]+1;
+                current[j] = replace < insert ? replace : insert;
+                if (erase < current[j]) current[j] = erase;
+            }
+            for (size_t j = 0; j <= m; ++j) previous[j] = current[j];
+        }
+        if (previous[m] < best) { best = previous[m]; suggestion = command->name; }
+    }
+    return suggestion;
+}
+static void completion_add(const char *prefix, const char *name, bool directory) {
+    if (completion_count == VFS_NODE_MAX) return;
+    size_t a = text_length(prefix), b = text_length(name);
+    if (a+b+(directory ? 1U:0U) > VFS_PATH_MAX) return;
+    char *out = completion_candidates[completion_count++];
+    memcpy(out, prefix, a); memcpy(out+a, name, b);
+    if (directory) out[a+b++] = '/';
+    out[a+b] = 0;
+}
+void ush_completion_show(void) {
+    for (size_t i = 0; i < completion_count; ++i) {
+        terminal_write("  "); terminal_write(completion_candidates[i]); terminal_write("\n");
+    }
+}
+enum ush_completion ush_complete(char line[USH_INPUT_MAX + 1U], size_t *caret) {
+    size_t size = text_length(line);
+    if (*caret > size || size > USH_INPUT_MAX) return USH_COMPLETE_NONE;
+    completion_count = 0;
+    char prefix[USH_INPUT_MAX+1];
+    memcpy(prefix, line, *caret); prefix[*caret] = 0;
+    struct ush_args args;
+    if (ush_tokenize_prefix(prefix, &args) != USH_OK) return USH_COMPLETE_NONE;
+    bool empty = !args.count || args.trailing_space;
+    size_t before = empty ? args.count : args.count-1;
+    const char *fragment = empty ? "" : args.values[before];
+    size_t start = empty ? *caret : args.starts[before];
+    char parent[USH_INPUT_MAX+1] = {0};
+    const struct ush_command *command = 0;
+    size_t resolved = 0;
+    if (before && ush_word_equal(args.values[0], "help")) resolved = 1;
+    for (; resolved < before; ++resolved) {
+        const struct ush_command *next = child(parent, args.values[resolved]);
+        if (!next) break;
+        command = next; append_word(parent, command->name);
+    }
+    bool command_position = resolved == before && (!command || !command->operation);
+    if (command_position) {
+        for (size_t i = 0; i < COMMAND_COUNT; ++i) {
+            const struct ush_command *candidate = &registry[i];
+            if (same(parent, candidate->parent) && (!candidate->alias || ush_compatibility()) &&
+                starts_with(candidate->name, fragment, true)) completion_add("", candidate->name, false);
+        }
+    }
+    if (!completion_count && command && command->operation) {
+        size_t argument = before - resolved;
+        bool transfer = same(command->operation,"copy") || same(command->operation,"move") || same(command->operation,"rename");
+        if (argument > (transfer ? 1U:0U) || same(command->operation,"where") || fragment[0] == '-')
+            return USH_COMPLETE_NONE;
+        size_t split = 0;
+        for (size_t i = 0; fragment[i]; ++i) if (fragment[i] == '/') split = i+1;
+        char directory[VFS_PATH_MAX+1], raw_directory[VFS_PATH_MAX+1], path_prefix[VFS_PATH_MAX+1];
+        memcpy(path_prefix, fragment, split); path_prefix[split] = 0;
+        if (!split) { raw_directory[0] = '.'; raw_directory[1] = 0; }
+        else { memcpy(raw_directory, fragment, split); raw_directory[split] = 0; }
+        if (vfs_resolve_path(raw_directory, ush_cwd(), directory, sizeof(directory)) != VFS_OK)
+            return USH_COMPLETE_NONE;
+        struct vfs_dir dir = {0};
+        if (vfs_dir_open(directory, &dir) != VFS_OK) return USH_COMPLETE_NONE;
+        char name[VFS_NAME_MAX+1]; enum vfs_node_type type;
+        bool directories = same(command->operation,"go") || same(command->operation,"list");
+        while (vfs_dir_next(&dir, name, sizeof(name), &type) == VFS_OK)
+            if ((!directories || type == VFS_NODE_DIRECTORY) && starts_with(name, fragment+split, false))
+                completion_add(path_prefix, name, type == VFS_NODE_DIRECTORY);
+        vfs_dir_close(&dir);
+    }
+    if (!completion_count) return USH_COMPLETE_NONE;
+    size_t common = text_length(completion_candidates[0]);
+    for (size_t i = 1; i < completion_count; ++i) {
+        size_t j = 0;
+        while (j < common && completion_candidates[0][j] == completion_candidates[i][j]) ++j;
+        common = j;
+    }
+    if (completion_count > 1 && common <= text_length(fragment)) return USH_COMPLETE_MULTIPLE;
+    /* Replace the complete raw token, preserving subsequent arguments and
+       normalizing quoted/escaped spelling to a safely encoded token. */
+    size_t end = start; char quote = 0;
+    while (line[end]) {
+        char c = line[end];
+        if (c == '\\' && line[end+1]) { end += 2; continue; }
+        if (quote) { if (c == quote) quote = 0; }
+        else if (c == '\'' || c == '"') quote = c;
+        else if (c == ' ') break;
+        ++end;
+    }
+    char encoded[VFS_PATH_MAX*2+4]; size_t used = 0;
+    bool quoted = false;
+    for (size_t i = 0; i < common; ++i) {
+        char c = completion_candidates[0][i];
+        if (c == ' ' || c == '\'' || c == '"' || c == '\\') quoted = true;
+    }
+    if (quoted) encoded[used++] = '"';
+    for (size_t i = 0; i < common; ++i) {
+        char c = completion_candidates[0][i];
+        if (c == '"' || c == '\\') encoded[used++] = '\\';
+        encoded[used++] = c;
+    }
+    if (quoted) encoded[used++] = '"';
+    if (completion_count == 1 && (!common || completion_candidates[0][common-1] != '/') && !line[end])
+        encoded[used++] = ' ';
+    if (start + used + size - end > USH_INPUT_MAX) return USH_COMPLETE_LIMIT;
+    memmove(line + start + used, line + end, size - end + 1);
+    memcpy(line + start, encoded, used); *caret = start + used;
+    return completion_count == 1 ? USH_COMPLETE_UNIQUE : USH_COMPLETE_MULTIPLE;
+}
+
 /* Expanded preallocated history pending a real memory allocator and filesystem.
    Limit command length to 70 so input stays on one line at common QEMU sizes. */
-#define INPUT_LIMIT 70
+#define INPUT_LIMIT USH_INPUT_MAX
 #define HISTORY_COUNT 4096
 static char history[HISTORY_COUNT][INPUT_LIMIT + 1];
 static size_t history_size;
@@ -322,6 +461,7 @@ static void save_history(const char *line) {
 void shell_run(void) {
     char line[INPUT_LIMIT + 1] = {0};
     size_t len = 0, caret = 0, selected = 0;
+    bool overflow = false, tab_again = false;
     prompt();
     terminal_input_begin();
     terminal_cursor(1);
@@ -329,12 +469,14 @@ void shell_run(void) {
         int key = keyboard_poll();
         if (!key) continue;
         terminal_cursor(0);
+        if (key != '\t') tab_again = false;
         if (key == KEY_CTRL_C) {
             terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_write("^C");
             terminal_newline();
             if (ush_confirmation_pending()) (void)ush_answer_confirmation("");
             len = caret = 0;
+            overflow = false;
             line[0] = 0;
             selected = history_size;
             prompt();
@@ -352,9 +494,24 @@ void shell_run(void) {
             caret = 0;
         } else if (key == KEY_END) {
             caret = len;
+        } else if (key == '\t') {
+            if (!ush_confirmation_pending() && !overflow) {
+                enum ush_completion result = ush_complete(line, &caret);
+                len = line_length(line);
+                if ((tab_again && result == USH_COMPLETE_MULTIPLE) || result == USH_COMPLETE_LIMIT) {
+                    terminal_input_redraw(line, (unsigned)len, (unsigned)len);
+                    terminal_newline();
+                    if (result == USH_COMPLETE_LIMIT) terminal_write("Completion exceeds input limit; input preserved.\n");
+                    else ush_completion_show();
+                    prompt(); terminal_input_begin();
+                }
+                tab_again = true;
+            }
         } else if (key == KEY_UP) {
+            overflow = false;
             if (selected > 0) replace_input(line, &len, &caret, history[--selected]);
         } else if (key == KEY_DOWN) {
+            overflow = false;
             if (selected < history_size) {
                 ++selected;
                 replace_input(line, &len, &caret,
@@ -362,6 +519,7 @@ void shell_run(void) {
             }
         } else if (key == KEY_CTRL_U) {
             replace_input(line, &len, &caret, "");
+            overflow = false;
             selected = history_size;
         } else if (key == KEY_CTRL_W) {
             size_t start = caret;
@@ -385,17 +543,22 @@ void shell_run(void) {
         } else if (key == '\n') {
             terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_newline();
-            normalize(line);
-            if (ush_confirmation_pending()) (void)ush_answer_confirmation(line);
+            if (overflow) {
+                terminal_write("Input exceeds 70 characters; command rejected.\n");
+                if (ush_confirmation_pending()) (void)ush_answer_confirmation("");
+            } else if (ush_confirmation_pending()) (void)ush_answer_confirmation(line);
             else {
                 if (!same(line, "clear history")) save_history(line);
                 dispatch(line);
             }
             len = caret = 0;
+            overflow = false;
             line[0] = 0;
             selected = history_size;
             prompt();
             terminal_input_begin();
+        } else if (key >= 32 && key <= 126 && len == INPUT_LIMIT) {
+            overflow = true;
         } else if (key >= 32 && key <= 126 && len < INPUT_LIMIT) {
             for (size_t i = len + 1; i > caret; --i) line[i] = line[i - 1];
             line[caret++] = (char)key;

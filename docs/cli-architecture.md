@@ -27,16 +27,6 @@ The exact CLI grammar remains subject to design/testing.
 
 ## Implementation status
 
-The current prototype only renders text into the Limine framebuffer. The displayed
-`ULTRIUM>` prompt is static, **not** a working command interpreter.
+The kernel has an interactive framebuffer shell with IRQ-backed PS/2 input, cursor editing, history, a static command registry, hierarchical help and a volatile RAMFS. Native USH commands, quoted arguments and Tab completion are documented in [Ultrium Shell](ultrium-shell.md). The kernel and shell have separate versions. Existing memory/interrupt tests and OS administration stay under `ultrium system` and `ultrium test`.
 
-Near-term steps:
-1. Terminal subsystem with scroll/wrap/color (this branch).
-2. Font assets/interface; JetBrains Mono preferred, subject to suitable licensed bitmap conversion.
-3. Keyboard input, line editing, and command dispatch.
-4. A minimal `ultrium` command with `version` and `system info`.
-5. An `ultrium ai status` command that clearly reports unavailable until an agent is actually present.
-6. A simple, versioned, manually editable desktop configuration and framebuffer renderer.
-7. A host-assisted AI generator producing validated desktop configurations, without executing models in kernel mode.
-
-Prefer an explicitly selected CLI boot mode over booting a desktop by default.
+External application loading, userspace processes, desktop services, persistent configuration and AI execution remain future work. Current AI status reports unavailable. Prefer an explicitly selected CLI boot mode over booting a desktop by default.
