@@ -361,8 +361,19 @@ static enum vfs_error ramfs_dir_close(struct vfs_dir *dir) {
     return VFS_OK;
 }
 
+static enum vfs_error ramfs_stat(const char *path, struct vfs_info *out) {
+    if (!out) return VFS_BAD_HANDLE;
+    struct vfs_node *node;
+    enum vfs_error error = resolve(path, &node);
+    if (error != VFS_OK) return error;
+    out->type = node->type;
+    out->size = node->length;
+    return VFS_OK;
+}
+
 const struct vfs_backend_ops *ramfs_backend(void) {
     static const struct vfs_backend_ops operations = {
+        .stat = ramfs_stat,
         .create_file = ramfs_create_file,
         .create_directory = ramfs_create_directory,
         .unlink = ramfs_unlink,

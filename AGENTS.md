@@ -39,3 +39,7 @@ The planned order is **Phase A (memory) → Phase C (interrupt and hardware infr
 Memory tests should cover distinct allocations, data isolation, accounting, reuse, invalid input, exhaustion where safely bounded, translation, unmapping, and cleanup. Do not deliberately corrupt unrelated kernel memory. Preserve boot, terminal, keyboard, shell, help, heap, page-table inspection, mapping, and existing diagnostics. Distinguish **implemented**, **compiled**, **QEMU-tested**, and **merged** in reports. Include exact maintainer commands, limits, remaining risks, branch, and PR URL.
 
 The current memory suite and headless QEMU procedure are documented in `docs/kernel-testing.md`; run them when changing allocator or mapping code.
+
+## Ultrium Shell conventions
+
+USH has a component version separate from the kernel. Native filesystem verbs are unprefixed (`list`, `go`, `where`, `new file/folder`, `view`, `write`, `remove`, `info`); Linux-style aliases are opt-in and session-scoped. Keep aliases and native operations on shared handlers; do not imply POSIX compatibility. Metadata must come from the VFS. See `docs/ultrium-shell.md`.

@@ -21,11 +21,12 @@ def main():
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 4,
-        "ultrium test all": 20,
+        "ultrium test all": 22,
+        "ultrium test shell": 2,
     }.get(command_text)
     if not keyboard_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
-            "ultrium test filesystem",
+            "ultrium test filesystem", "ultrium test shell",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
