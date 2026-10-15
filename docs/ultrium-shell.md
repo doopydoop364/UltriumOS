@@ -1,4 +1,4 @@
-# Ultrium Shell (USH 0.1)
+# Ultrium Shell (USH 0.2)
 
 Simple actions should be short. Complex operations should be structured. Everything should be discoverable.
 
@@ -13,3 +13,9 @@ Use `<command> help`. OS diagnostics remain under `ultrium system` and `ultrium 
 Example: `new folder projects`, `write projects/notes Hello Ultrium`, `list projects`, `view projects/notes`, `info projects/notes`, `remove projects/notes`, `remove projects`.
 
 Limits: input 70 characters, 16 arguments, names 31 bytes, paths 127 bytes, files 4096 bytes, 128 nodes. Quoting, structured file/folder namespaces, copy/move/rename, recursive deletion and completion arrive in subsequent USH milestones. See [RAMFS](ramfs.md) for storage limits.
+
+## Registry and structured commands
+
+Routing and hierarchical help share static registry metadata: name, parent namespace, description, usage, handler, argument bounds and alias availability. `help path` and `path help` are equivalent. Parent menus show immediate children. All existing `ultrium system` diagnostics and `ultrium test` suites are registered.
+
+`file new|view|write|remove|info` and `folder new|list|go|remove|info` use the same handlers as everyday commands. `file`/`folder` describe discovery groups; shared item operations still report actual VFS types. Copy, move and rename are added in USH 0.3.

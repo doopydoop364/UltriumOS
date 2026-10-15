@@ -43,3 +43,5 @@ The current memory suite and headless QEMU procedure are documented in `docs/ker
 ## Ultrium Shell conventions
 
 USH has a component version separate from the kernel. Native filesystem verbs are unprefixed (`list`, `go`, `where`, `new file/folder`, `view`, `write`, `remove`, `info`); Linux-style aliases are opt-in and session-scoped. Keep aliases and native operations on shared handlers; do not imply POSIX compatibility. Metadata must come from the VFS. See `docs/ultrium-shell.md`.
+
+Keep command routing and hierarchical help in the static USH registry; every path supports trailing `help`, and parent help lists immediate children. Register new commands with usage, argument bounds and shared handlers. Preserve the `ultrium system` hierarchy.
