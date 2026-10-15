@@ -84,6 +84,8 @@ bool ramfs_init(void) {
     return true;
 }
 
+static struct vfs_node *find_child(struct vfs_node *parent, const char *name);
+
 static enum vfs_error resolve(const char *path, struct vfs_node **out) {
     if (!root || !path || path[0] != '/' || !out) return VFS_INVALID_PATH;
     *out = 0;
@@ -97,15 +99,7 @@ static enum vfs_error resolve(const char *path, struct vfs_node **out) {
         size_t length = i - start;
         char name[VFS_NAME_MAX + 1U];
         if (!copy_name(name, path + start, length)) return VFS_INVALID_PATH;
-        struct vfs_node *child = node->children;
-        while (child && string_length(child->name) != length) child = child->next;
-        while (child) {
-            bool equal = true;
-            for (size_t j = 0; j < length; ++j)
-                if (child->name[j] != name[j]) { equal = false; break; }
-            if (equal) break;
-            child = child->next;
-        }
+        struct vfs_node *child = find_child(node, name);
         if (!child) return VFS_NOT_FOUND;
         node = child;
         if (path[i] == '/') {
@@ -229,12 +223,12 @@ static enum vfs_error ramfs_unlink(const char *path) {
     if (!*link) return VFS_NOT_FOUND;
     struct vfs_node *node = *link;
     if (node->open_handles) return VFS_UNSUPPORTED;
-    if (node->type == VFS_NODE_DIRECTORY && node->children) return VFS_UNSUPPORTED;
+    if (node->type == VFS_NODE_DIRECTORY && node->children) return VFS_NOT_EMPTY;
     *link = node->next;
     if (node->data) kfree(node->data);
+    allocated_data_capacity -= node->capacity;
     kfree(node);
     --node_count;
-    allocated_data_capacity -= node->capacity;
     return VFS_OK;
 }
 
@@ -361,6 +355,80 @@ static enum vfs_error ramfs_dir_close(struct vfs_dir *dir) {
     return VFS_OK;
 }
 
+static enum vfs_error destination(const char *path, struct vfs_node **parent,
+                                    char name[VFS_NAME_MAX + 1U]) {
+    enum vfs_error error = resolve_parent(path, parent, name);
+    if (error != VFS_OK) return error;
+    if ((*parent)->type != VFS_NODE_DIRECTORY) return VFS_NOT_DIRECTORY;
+    if ((*parent)->open_handles) return VFS_UNSUPPORTED;
+    if (find_child(*parent, name)) return VFS_EXISTS;
+    return VFS_OK;
+}
+static enum vfs_error ramfs_copy(const char *source, const char *target) {
+    struct vfs_node *node, *parent;
+    enum vfs_error error = resolve(source, &node);
+    if (error != VFS_OK) return error;
+    if (node->type != VFS_NODE_FILE) return VFS_IS_DIRECTORY;
+    char name[VFS_NAME_MAX + 1U];
+    error = destination(target, &parent, name);
+    if (error != VFS_OK) return error;
+    if (node_count == VFS_NODE_MAX || node->capacity > VFS_DATA_MAX - allocated_data_capacity)
+        return VFS_NO_SPACE;
+    struct vfs_node *copy = fs_alloc(sizeof(*copy));
+    if (!copy) return VFS_NO_SPACE;
+    memset(copy, 0, sizeof(*copy));
+    if (node->capacity) {
+        copy->data = fs_alloc(node->capacity);
+        if (!copy->data) { kfree(copy); return VFS_NO_SPACE; }
+        memset(copy->data, 0, node->capacity);
+        if (node->length) memcpy(copy->data, node->data, node->length);
+    }
+    copy->capacity = node->capacity; copy->length = node->length;
+    copy->type = VFS_NODE_FILE; copy->parent = parent;
+    copy_name(copy->name, name, string_length(name));
+    /* All failure points precede the namespace/accounting commit. */
+    struct vfs_node **tail = &parent->children;
+    while (*tail) tail = &(*tail)->next;
+    *tail = copy; ++node_count; allocated_data_capacity += copy->capacity;
+    return VFS_OK;
+}
+static enum vfs_error ramfs_rename(const char *source, const char *target) {
+    struct vfs_node *node, *parent;
+    enum vfs_error error = resolve(source, &node);
+    if (error != VFS_OK) return error;
+    if (node == root) return VFS_INVALID_PATH;
+    char name[VFS_NAME_MAX + 1U];
+    error = destination(target, &parent, name);
+    if (error != VFS_OK) return error;
+    if (node->open_handles || node->parent->open_handles) return VFS_UNSUPPORTED;
+    for (struct vfs_node *p = parent; p; p = p->parent)
+        if (p == node) return VFS_INVALID_PATH;
+    /* Check that every descendant remains addressable after relocation.
+       Bounded node worklist, no recursive C calls or allocation. */
+    struct vfs_node *pending[VFS_NODE_MAX];
+    size_t lengths[VFS_NODE_MAX], count = 1;
+    pending[0] = node; lengths[0] = string_length(target);
+    while (count) {
+        --count;
+        struct vfs_node *p = pending[count]; size_t n = lengths[count];
+        if (n > VFS_PATH_MAX) return VFS_INVALID_PATH;
+        for (struct vfs_node *c = p->children; c; c = c->next) {
+            if (count == VFS_NODE_MAX) return VFS_NO_SPACE;
+            pending[count] = c; lengths[count++] = n + 1 + string_length(c->name);
+        }
+    }
+    struct vfs_node **link = &node->parent->children;
+    while (*link && *link != node) link = &(*link)->next;
+    if (!*link) return VFS_NOT_FOUND;
+    *link = node->next;
+    node->next = 0; node->parent = parent;
+    copy_name(node->name, name, string_length(name));
+    struct vfs_node **tail = &parent->children;
+    while (*tail) tail = &(*tail)->next;
+    *tail = node;
+    return VFS_OK;
+}
+
 static enum vfs_error ramfs_stat(const char *path, struct vfs_info *out) {
     if (!out) return VFS_BAD_HANDLE;
     struct vfs_node *node;
@@ -373,6 +441,8 @@ static enum vfs_error ramfs_stat(const char *path, struct vfs_info *out) {
 
 const struct vfs_backend_ops *ramfs_backend(void) {
     static const struct vfs_backend_ops operations = {
+        .copy = ramfs_copy,
+        .rename = ramfs_rename,
         .stat = ramfs_stat,
         .create_file = ramfs_create_file,
         .create_directory = ramfs_create_directory,

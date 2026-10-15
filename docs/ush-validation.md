@@ -19,4 +19,8 @@ python3 tools/qemu-memory-test.py --keyboard-regression
 
 | USH 0.2 | pass, no compiler warnings | 23/0 each | 4/0 each | 6 summaries, 1/0 each |
 
+| USH 0.3 | pass, no compiler warnings | 28/0 each | 8/0 each | 6 summaries, 1/0 each |
+
+Negative control for USH 0.3: deliberately flipped a copied byte in RAMFS, rebuilt the ISO and ran the filesystem harness. It reported `FAIL filesystem copy/rename rollback: copied bytes differ` and `passed=7 failed=1`; the Python runner exited 1. Restored the source, forced a full rebuild, and reran the complete required matrix above.
+
 These are local QEMU results, not hosted Actions results. No PR is merged by this work.

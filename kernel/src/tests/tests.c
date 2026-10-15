@@ -731,7 +731,186 @@ static const char *shell_registry(void) {
         ush_execute("folder remove /ush-structured") != USH_OK) return "structured operations failed";
     return 0;
 }
+#define FS_REQUIRE(condition, message) do { if (!(condition)) { reason = message; goto cleanup; } } while (0)
+static const char *filesystem_transfer(void) {
+    uint64_t frames = pmm_free_pages(), allocations = heap_live_allocations();
+    const char *reason = 0;
+    struct vfs_file file = {0}; struct vfs_info info;
+    struct vfs_remove_report report;
+    char payload[VFS_FILE_MAX], received[VFS_FILE_MAX];
+    for (size_t i = 0; i < sizeof(payload); ++i) payload[i] = (char)(i * 17);
+    size_t count = 0;
+    FS_REQUIRE(vfs_create_directory("/fs-transfer") == VFS_OK, "fixture failed");
+    FS_REQUIRE(vfs_create_file("/fs-transfer/source") == VFS_OK &&
+        vfs_file_open("/fs-transfer/source", VFS_OPEN_WRITE, &file) == VFS_OK &&
+        vfs_file_write(&file, payload, sizeof(payload), &count) == VFS_OK && count == sizeof(payload) &&
+        vfs_file_close(&file) == VFS_OK, "source write failed");
+    for (int fail = 0; fail < 2; ++fail) {
+        uint64_t before = heap_live_allocations();
+        vfs_test_fail_alloc_after(fail);
+        enum vfs_error failed = vfs_copy("/fs-transfer/source", "/fs-transfer/copy");
+        vfs_test_fail_alloc_after(-1);
+        FS_REQUIRE(failed == VFS_NO_SPACE && heap_live_allocations() == before &&
+            vfs_stat("/fs-transfer/copy", &info) == VFS_NOT_FOUND, "copy allocation rollback failed");
+    }
+    FS_REQUIRE(vfs_copy("/fs-transfer/source", "/fs-transfer/copy") == VFS_OK &&
+        vfs_file_open("/fs-transfer/copy", VFS_OPEN_READ, &file) == VFS_OK &&
+        vfs_file_read(&file, received, sizeof(received), &count) == VFS_OK && count == sizeof(payload) &&
+        !memcmp(payload, received, count) && vfs_file_close(&file) == VFS_OK, "copied bytes differ");
+    FS_REQUIRE(vfs_copy("/fs-transfer/source", "/fs-transfer/copy") == VFS_EXISTS &&
+        vfs_rename("/fs-transfer/source", "/fs-transfer/copy") == VFS_EXISTS &&
+        vfs_copy("/fs-transfer/missing", "/fs-transfer/new") == VFS_NOT_FOUND &&
+        vfs_copy("/fs-transfer", "/fs-transfer/new") == VFS_IS_DIRECTORY &&
+        vfs_copy("/fs-transfer/source", "/fs-transfer/source/child") == VFS_NOT_DIRECTORY,
+        "transfer conflicts or types accepted");
+    FS_REQUIRE(vfs_create_directory("/fs-transfer/dir") == VFS_OK &&
+        vfs_create_file("/fs-transfer/dir/child") == VFS_OK &&
+        vfs_rename("/fs-transfer/dir", "/fs-transfer/dir/descendant") == VFS_INVALID_PATH &&
+        vfs_rename("/fs-transfer/dir", "/fs-transfer/dir") == VFS_EXISTS &&
+        vfs_rename("/", "/fs-transfer/root") == VFS_INVALID_PATH, "directory cycle accepted");
+    vfs_test_fail_alloc_after(0);
+    enum vfs_error renamed = vfs_rename("/fs-transfer/dir", "/fs-transfer/moved");
+    vfs_test_fail_alloc_after(-1);
+    FS_REQUIRE(renamed == VFS_OK && vfs_stat("/fs-transfer/moved/child", &info) == VFS_OK &&
+        vfs_stat("/fs-transfer/dir", &info) == VFS_NOT_FOUND, "atomic allocation-free rename failed");
+cleanup:
+    vfs_test_fail_alloc_after(-1);
+    if (file.generation) vfs_file_close(&file);
+    if (vfs_remove_tree("/fs-transfer", &report) != VFS_OK && !reason) reason = "transfer cleanup failed";
+    if (heap_live_allocations() != allocations || pmm_free_pages() != frames) reason = "transfer leaked memory";
+    return reason;
+}
+static const char *filesystem_safe_paths(void) {
+    const char *reason = 0;
+    struct vfs_info info; struct vfs_remove_report report;
+    char out[VFS_PATH_MAX + 1U];
+    FS_REQUIRE(vfs_create_directory("/fs-paths") == VFS_OK &&
+        vfs_create_file("/fs-paths/x") == VFS_OK && vfs_create_file("/fs-paths/abc") == VFS_OK,
+        "path fixture failed");
+    /* A failed same-length comparison followed by a longer prefix must not match. */
+    FS_REQUIRE(vfs_stat("/fs-paths/a", &info) == VFS_NOT_FOUND &&
+        vfs_create_file("/fs-paths/..") == VFS_INVALID_PATH &&
+        vfs_create_file("/fs-paths/.") == VFS_INVALID_PATH &&
+        vfs_create_file("/fs-paths//bad") == VFS_INVALID_PATH &&
+        vfs_unlink("/fs-paths/x/") == VFS_INVALID_PATH &&
+        vfs_rename("/fs-paths/x", "/fs-paths/../redirect") == VFS_INVALID_PATH,
+        "noncanonical path or prefix collision accepted");
+    FS_REQUIRE(vfs_resolve_path("missing/../x", "/fs-paths", out, sizeof(out)) == VFS_NOT_FOUND &&
+        vfs_resolve_path("x/../abc", "/fs-paths", out, sizeof(out)) == VFS_NOT_DIRECTORY &&
+        vfs_resolve_path("./abc", "/fs-paths", out, sizeof(out)) == VFS_OK &&
+        !memcmp(out, "/fs-paths/abc", sizeof("/fs-paths/abc")), "invalid traversal redirected action");
+    FS_REQUIRE(vfs_create_directory("/fs-paths/a") == VFS_OK &&
+        vfs_create_directory("/fs-paths/a/b") == VFS_OK &&
+        vfs_create_file("/fs-paths/a/b/0123456789012345678901234567890") == VFS_OK,
+        "long path fixture failed");
+    FS_REQUIRE(vfs_create_directory("/fs-paths/0123456789012345678901234567890") == VFS_OK &&
+        vfs_create_directory("/fs-paths/0123456789012345678901234567890/0123456789012345678901234567890") == VFS_OK &&
+        vfs_rename("/fs-paths/a", "/fs-paths/0123456789012345678901234567890/0123456789012345678901234567890/0123456789012345678901234567890") == VFS_INVALID_PATH &&
+        vfs_is_directory("/fs-paths/a/b"), "rename made descendants unreachable");
+cleanup:
+    if (vfs_remove_tree("/fs-paths", &report) != VFS_OK && !reason) reason = "path cleanup failed";
+    return reason;
+}
+static const char *filesystem_tree_removal(void) {
+    const char *reason = 0;
+    uint64_t allocations = heap_live_allocations(), frames = pmm_free_pages();
+    struct vfs_file held = {0}; struct vfs_remove_report report; struct vfs_info info;
+    FS_REQUIRE(vfs_create_directory("/fs-tree") == VFS_OK &&
+        vfs_create_directory("/fs-tree/sub") == VFS_OK &&
+        vfs_create_file("/fs-tree/sub/first") == VFS_OK &&
+        vfs_create_file("/fs-tree/sub/held") == VFS_OK &&
+        vfs_file_open("/fs-tree/sub/held", VFS_OPEN_READ, &held) == VFS_OK,
+        "tree fixture failed");
+    FS_REQUIRE(vfs_unlink("/fs-tree") == VFS_NOT_EMPTY &&
+        vfs_remove_tree("/", &report) == VFS_INVALID_PATH && !report.removed,
+        "nonrecursive or root removal accepted");
+    FS_REQUIRE(vfs_remove_tree("/fs-tree", &report) == VFS_UNSUPPORTED && report.removed == 1 &&
+        !memcmp(report.remaining, "/fs-tree/sub/held", sizeof("/fs-tree/sub/held")) &&
+        vfs_stat("/fs-tree/sub/first", &info) == VFS_NOT_FOUND &&
+        vfs_stat("/fs-tree/sub/held", &info) == VFS_OK, "partial removal report incorrect");
+    FS_REQUIRE(vfs_file_close(&held) == VFS_OK && vfs_remove_tree("/fs-tree", &report) == VFS_OK &&
+        report.removed == 3, "tree removal recovery failed");
+cleanup:
+    if (held.generation) vfs_file_close(&held);
+    if (vfs_is_directory("/fs-tree")) vfs_remove_tree("/fs-tree", &report);
+    if (heap_live_allocations() != allocations || pmm_free_pages() != frames) reason = "tree removal leaked memory";
+    return reason;
+}
+static const char *filesystem_capacity(void) {
+    const char *reason = 0;
+    uint64_t allocations = heap_live_allocations(), frames = pmm_free_pages();
+    struct vfs_remove_report report; struct vfs_file file = {0};
+    char payload[VFS_FILE_MAX]; memset(payload, 0x39, sizeof(payload)); size_t count;
+    FS_REQUIRE(vfs_create_directory("/fs-limits") == VFS_OK &&
+        vfs_create_file("/fs-limits/data") == VFS_OK &&
+        vfs_file_open("/fs-limits/data", VFS_OPEN_WRITE, &file) == VFS_OK &&
+        vfs_file_write(&file, payload, sizeof(payload), &count) == VFS_OK &&
+        vfs_file_close(&file) == VFS_OK, "capacity fixture failed");
+    const char *hex = "0123456789abcdef";
+    unsigned copies = 0;
+    for (; copies < VFS_NODE_MAX; ++copies) {
+        char path[] = "/fs-limits/n00";
+        path[12] = hex[(copies >> 4) & 15]; path[13] = hex[copies & 15];
+        enum vfs_error result = vfs_copy("/fs-limits/data", path);
+        if (result == VFS_NO_SPACE) break;
+        FS_REQUIRE(result == VFS_OK, "capacity copy returned unexpected error");
+    }
+    FS_REQUIRE(copies == VFS_DATA_MAX / VFS_FILE_MAX - 1, "data capacity not enforced");
+    FS_REQUIRE(vfs_remove_tree("/fs-limits", &report) == VFS_OK &&
+        vfs_create_directory("/fs-limits") == VFS_OK, "capacity reset failed");
+    unsigned nodes = 0;
+    for (; nodes < VFS_NODE_MAX; ++nodes) {
+        char path[] = "/fs-limits/n00";
+        path[12] = hex[(nodes >> 4) & 15]; path[13] = hex[nodes & 15];
+        enum vfs_error result = vfs_create_file(path);
+        if (result == VFS_NO_SPACE) break;
+        FS_REQUIRE(result == VFS_OK, "node capacity unexpected error");
+    }
+    FS_REQUIRE(nodes == VFS_NODE_MAX - 2, "node capacity not enforced");
+cleanup:
+    if (file.generation) vfs_file_close(&file);
+    if (vfs_remove_tree("/fs-limits", &report) != VFS_OK && !reason) reason = "capacity cleanup failed";
+    if (heap_live_allocations() != allocations || pmm_free_pages() != frames) reason = "capacity tests leaked";
+    return reason;
+}
+static const char *shell_safe_operations(void) {
+    const char *reason = 0;
+    struct vfs_remove_report report; struct vfs_info info;
+    FS_REQUIRE(ush_execute("new folder /ush-safe") == USH_OK &&
+        ush_execute("new folder /ush-safe/sub") == USH_OK &&
+        ush_execute("write /ush-safe/sub/a bytes") == USH_OK &&
+        ush_execute("copy /ush-safe/sub/a /ush-safe/sub/b") == USH_OK &&
+        ush_execute("file rename /ush-safe/sub/b /ush-safe/sub/c") == USH_OK &&
+        ush_execute("move /ush-safe/sub/c /ush-safe/c") == USH_OK, "shell transfer failed");
+    FS_REQUIRE(ush_execute("remove /ush-safe -y") == USH_FS_ERROR &&
+        ush_execute("remove /ush-safe --unknown") == USH_USAGE &&
+        ush_execute("remove / -r -y") == USH_FS_ERROR &&
+        ush_execute("go /ush-safe/sub") == USH_OK &&
+        ush_execute("remove /ush-safe -r -y") == USH_FS_ERROR &&
+        ush_execute("remove . -r -y") == USH_FS_ERROR &&
+        ush_execute("move /ush-safe /moved") == USH_FS_ERROR &&
+        ush_execute("go /") == USH_OK, "removal flags or cwd protection failed");
+    FS_REQUIRE(ush_execute("remove /ush-safe -r") == USH_PENDING && ush_confirmation_pending() &&
+        ush_answer_confirmation("") == USH_OK && vfs_is_directory("/ush-safe"), "default confirmation not conservative");
+    FS_REQUIRE(ush_execute("remove /ush-safe -r") == USH_PENDING &&
+        ush_answer_confirmation("no") == USH_OK && vfs_is_directory("/ush-safe"), "confirmation rejection failed");
+    FS_REQUIRE(ush_execute("remove /ush-safe --recursive") == USH_PENDING &&
+        ush_answer_confirmation("yes") == USH_OK && vfs_stat("/ush-safe", &info) == VFS_NOT_FOUND,
+        "affirmative recursive removal failed");
+    FS_REQUIRE(ush_execute("new folder /ush-safe") == USH_OK &&
+        ush_execute("new file /ush-safe/a") == USH_OK &&
+        ush_execute("remove /ush-safe --recursive --yes") == USH_OK && !ush_confirmation_pending(),
+        "noninteractive recursive removal failed");
+cleanup:
+    if (ush_confirmation_pending()) ush_answer_confirmation("");
+    ush_execute("go /");
+    if (vfs_is_directory("/ush-safe")) vfs_remove_tree("/ush-safe", &report);
+    return reason;
+}
+#undef FS_REQUIRE
+
 static const struct test_case shell_cases[] = {
+    {"USH safe operations", shell_safe_operations},
     {"USH registry and help", shell_registry},
     {"USH native commands", shell_native}, {"USH compatibility and errors", shell_aliases}
 };
@@ -754,7 +933,11 @@ static const struct test_case filesystem_cases[] = {
     {"filesystem paths", filesystem_paths},
     {"filesystem file I/O", filesystem_file_io},
     {"filesystem directory iteration", filesystem_directory_iteration},
-    {"filesystem allocation rollback", filesystem_rollback}
+    {"filesystem allocation rollback", filesystem_rollback},
+    {"filesystem copy/rename rollback", filesystem_transfer},
+    {"filesystem strict paths", filesystem_safe_paths},
+    {"filesystem bounded tree removal", filesystem_tree_removal},
+    {"filesystem capacity limits", filesystem_capacity}
 };
 static void run_groups(const struct test_case *const *groups,
                        const size_t *counts, size_t group_count) {

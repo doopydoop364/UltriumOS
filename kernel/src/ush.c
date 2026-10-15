@@ -16,15 +16,6 @@ bool ush_word_equal(const char *a, const char *b) {
 const char *ush_cwd(void) { return cwd; }
 bool ush_compatibility(void) { return compatibility; }
 void ush_version(void) { terminal_write("Ultrium Shell (USH) " USH_VERSION "\n"); }
-void ush_help(void) {
-    ush_version();
-    terminal_write("Simple actions should be short. Complex operations should be structured.\nEverything should be discoverable.\n");
-    terminal_write("Native: list, go, where, new file, new folder, view, write, remove, info\n");
-    terminal_write("ultrium shell version\nultrium shell compatibility help\n");
-}
-void ush_compatibility_help(void) {
-    terminal_write("ultrium shell compatibility status|enable|disable\nSession only. Selected aliases; no POSIX or Bash compatibility.\n");
-}
 void ush_compatibility_status(void) {
     terminal_write(compatibility ? "Compatibility aliases: enabled (session only)\n" :
                                   "Compatibility aliases: disabled (native mode)\n");
@@ -60,6 +51,7 @@ static enum ush_result failure(enum vfs_error error) {
         case VFS_NOT_DIRECTORY: terminal_write("not a directory\n"); break;
         case VFS_IS_DIRECTORY: terminal_write("is a directory\n"); break;
         case VFS_NO_SPACE: terminal_write("out of memory or capacity\n"); break;
+        case VFS_NOT_EMPTY: terminal_write("folder is not empty; use -r to recurse\n"); break;
         case VFS_INVALID_PATH: terminal_write("invalid path\n"); break;
         default: terminal_write("unsupported or busy operation\n"); break;
     }
@@ -70,16 +62,87 @@ static void number(size_t value) {
     do { digits[n++] = '0' + value % 10; value /= 10; } while (value);
     while (n) terminal_putc_color(digits[--n], TERMINAL_NORMAL);
 }
+static char confirmation[192];
+static void (*confirmation_answer)(bool);
+bool ush_request_confirmation(const char *question, void (*answer)(bool)) {
+    if (!question || !answer || confirmation_answer) return false;
+    size_t n = length(question);
+    if (n >= sizeof(confirmation)) return false;
+    for (size_t i = 0; i <= n; ++i) confirmation[i] = question[i];
+    confirmation_answer = answer;
+    return true;
+}
+bool ush_confirmation_pending(void) { return confirmation_answer != 0; }
+const char *ush_confirmation_prompt(void) { return confirmation; }
+enum ush_result ush_answer_confirmation(const char *line) {
+    if (!confirmation_answer) return USH_USAGE;
+    void (*answer)(bool) = confirmation_answer;
+    confirmation_answer = 0;
+    answer(ush_word_equal(line, "y") || ush_word_equal(line, "yes"));
+    return USH_OK;
+}
+static bool protected_path(const char *path) {
+    size_t n = length(path);
+    return n == 1 || (length(cwd) >= n && __builtin_memcmp(path, cwd, n) == 0 &&
+                    (cwd[n] == '/' || cwd[n] == 0));
+}
+static char removal_path[VFS_PATH_MAX + 1U];
+static enum ush_result remove_tree(const char *path) {
+    struct vfs_remove_report report;
+    enum vfs_error error = vfs_remove_tree(path, &report);
+    terminal_write("Removed items: "); number(report.removed); terminal_write("\n");
+    if (error != VFS_OK) {
+        terminal_write("Removal stopped. Remaining tree: "); terminal_write(path);
+        terminal_write("\nBlocked at: "); terminal_write(report.remaining); terminal_write("\n");
+    }
+    return failure(error);
+}
+static void removal_answer(bool yes) {
+    if (yes) (void)remove_tree(removal_path);
+    else terminal_write("Removal cancelled.\n");
+}
+static enum ush_result remove_item(size_t argc, char **argv) {
+    bool recursive = false, yes = false;
+    const char *argument = 0;
+    for (size_t i = 0; i < argc; ++i) {
+        if (ush_word_equal(argv[i], "-r") || ush_word_equal(argv[i], "--recursive")) recursive = true;
+        else if (ush_word_equal(argv[i], "-y") || ush_word_equal(argv[i], "--yes")) yes = true;
+        else if (argv[i][0] == '-' || argument) {
+            terminal_write("Unsupported remove option or extra path.\n"); return USH_USAGE;
+        } else argument = argv[i];
+    }
+    if (!argument) return USH_USAGE;
+    char path[VFS_PATH_MAX + 1U];
+    enum vfs_error error = vfs_resolve_path(argument, cwd, path, sizeof(path));
+    if (error != VFS_OK) return failure(error);
+    if (protected_path(path)) {
+        terminal_write("Removal refused: root, current directory, or ancestor.\n"); return USH_FS_ERROR;
+    }
+    struct vfs_info info;
+    error = vfs_stat(path, &info);
+    if (error != VFS_OK) return failure(error);
+    if (!recursive || info.type == VFS_NODE_FILE) return failure(vfs_unlink(path));
+    if (yes) return remove_tree(path);
+    for (size_t i = 0; i <= length(path); ++i) removal_path[i] = path[i];
+    char question[192]; size_t used = 0;
+    const char *parts[] = {"Remove '", path, "' and all its contents? [y/N] "};
+    for (size_t i = 0; i < 3; ++i)
+        for (size_t j = 0; parts[i][j]; ++j) question[used++] = parts[i][j];
+    question[used] = 0;
+    return ush_request_confirmation(question, removal_answer) ? USH_PENDING : USH_USAGE;
+}
 enum ush_result ush_operation(const char *name, size_t argc, char **argv) {
+    if (ush_word_equal(name, "remove")) return remove_item(argc, argv);
+    bool transfer = ush_word_equal(name, "copy") || ush_word_equal(name, "move") || ush_word_equal(name, "rename");
     bool list = ush_word_equal(name, "list"), where = ush_word_equal(name, "where");
     bool write = ush_word_equal(name, "write");
     if ((where && argc) || (list && argc > 1) ||
-        (!where && !list && !write && argc != 1) || (write && argc < 2)) {
+        (!where && !list && !write && !transfer && argc != 1) || (write && argc < 2) || (transfer && argc != 2)) {
         terminal_write("Invalid arguments. Use '<command> help'.\n"); return USH_USAGE;
     }
     if (where) { terminal_write(cwd); terminal_write("\n"); return USH_OK; }
     char path[VFS_PATH_MAX + 1U];
-    enum vfs_error error = vfs_normalize(argc ? argv[0] : ".", cwd, path, sizeof(path));
+    enum vfs_error error = vfs_resolve_path(argc ? argv[0] : ".", cwd, path, sizeof(path));
     if (error != VFS_OK) return failure(error);
     if (list) {
         struct vfs_dir dir = {0};
@@ -103,14 +166,14 @@ enum ush_result ush_operation(const char *name, size_t argc, char **argv) {
     }
     if (ush_word_equal(name, "new folder")) return failure(vfs_create_directory(path));
     if (ush_word_equal(name, "new file")) return failure(vfs_create_file(path));
-    if (ush_word_equal(name, "remove")) {
-        size_t n = length(path);
-        if (n == 1 || (length(cwd) >= n && __builtin_memcmp(path, cwd, n) == 0 &&
-            (cwd[n] == '/' || cwd[n] == 0))) {
-            terminal_write("Removal refused: root, current directory, or ancestor.\n");
-            return USH_FS_ERROR;
+    if (transfer) {
+        char destination[VFS_PATH_MAX + 1U];
+        error = vfs_resolve_path(argv[1], cwd, destination, sizeof(destination));
+        if (error != VFS_OK) return failure(error);
+        if (!ush_word_equal(name, "copy") && protected_path(path)) {
+            terminal_write("Move refused: root, current directory, or ancestor.\n"); return USH_FS_ERROR;
         }
-        return failure(vfs_unlink(path));
+        return failure(ush_word_equal(name, "copy") ? vfs_copy(path, destination) : vfs_rename(path, destination));
     }
     if (ush_word_equal(name, "info")) {
         struct vfs_info info;

@@ -45,3 +45,5 @@ The current memory suite and headless QEMU procedure are documented in `docs/ker
 USH has a component version separate from the kernel. Native filesystem verbs are unprefixed (`list`, `go`, `where`, `new file/folder`, `view`, `write`, `remove`, `info`); Linux-style aliases are opt-in and session-scoped. Keep aliases and native operations on shared handlers; do not imply POSIX compatibility. Metadata must come from the VFS. See `docs/ultrium-shell.md`.
 
 Keep command routing and hierarchical help in the static USH registry; every path supports trailing `help`, and parent help lists immediate children. Register new commands with usage, argument bounds and shared handlers. Preserve the `ultrium system` hierarchy.
+
+Removal never recurses without `-r`/`--recursive`; `-y`/`--yes` only skips confirmation. Protect root/cwd/ancestors. Use bounded iterative traversal, report partial deletion, and define mount/link policies before adding those features. Transfers refuse existing destinations; use VFS copy/rename, never bypass RAMFS ownership. Kernel callers pass canonical absolute paths; shell actions use `vfs_resolve_path` to validate intermediate traversal.
