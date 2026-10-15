@@ -17,4 +17,6 @@ python3 tools/qemu-memory-test.py --keyboard-regression
 | baseline | pass | 20/0 each | 4/0 each | 6 summaries, 1/0 each |
 | USH 0.1 | pass, no compiler warnings | 22/0 each | 4/0 each | 6 summaries, 1/0 each |
 
+| USH 0.2 | pass, no compiler warnings | 23/0 each | 4/0 each | 6 summaries, 1/0 each |
+
 These are local QEMU results, not hosted Actions results. No PR is merged by this work.

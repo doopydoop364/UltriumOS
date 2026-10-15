@@ -711,7 +711,28 @@ static const char *shell_aliases(void) {
     if (saved) ush_compatibility_enable();
     return reason;
 }
+static const char *shell_registry(void) {
+    const char *help[] = {"help", "go help", "new help", "new file help", "file help",
+        "folder help", "ultrium help", "ultrium system help", "ultrium system memory help",
+        "ultrium shell help", "ultrium shell compatibility help", "help file new",
+        "ultrium system memory mapping managed help", "ultrium test all help"};
+    if (!ush_registry_valid()) return "invalid or duplicate registry metadata";
+    for (size_t i = 0; i < sizeof(help)/sizeof(help[0]); ++i)
+        if (ush_execute(help[i]) != USH_OK) return "hierarchical help failed";
+    if (ush_execute("ultrium version") != USH_OK || ush_execute("ultrium system info") != USH_OK ||
+        ush_execute("ultrium system interrupts") != USH_OK || ush_execute("ultrium system memory") != USH_OK ||
+        ush_execute("ultrium test nonsense") != USH_UNKNOWN || ush_execute("file new") != USH_USAGE)
+        return "OS routing or argument validation failed";
+    if (ush_execute("folder new /ush-structured") != USH_OK ||
+        ush_execute("file write /ush-structured/a text") != USH_OK ||
+        ush_execute("file info /ush-structured/a") != USH_OK ||
+        ush_execute("folder list /ush-structured") != USH_OK ||
+        ush_execute("file remove /ush-structured/a") != USH_OK ||
+        ush_execute("folder remove /ush-structured") != USH_OK) return "structured operations failed";
+    return 0;
+}
 static const struct test_case shell_cases[] = {
+    {"USH registry and help", shell_registry},
     {"USH native commands", shell_native}, {"USH compatibility and errors", shell_aliases}
 };
 

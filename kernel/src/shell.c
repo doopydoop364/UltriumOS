@@ -13,10 +13,6 @@
 #include "version.h"
 #include "ush.h"
 
-/* Built-in Ultrium commands and future external programs have separate dispatch paths. */
-typedef void (*command_handler)(void);
-struct command { const char *name; command_handler handler; };
-
 static int same(const char *a, const char *b) {
     while (*a && *b && *a == *b) { ++a; ++b; }
     return *a == *b;
@@ -47,82 +43,6 @@ static void normalize(char *line) {
             line[i] = (char)(line[i] + ('a' - 'A'));
 }
 static void prompt(void) { terminal_write_color("ultrium> ", TERMINAL_ACCENT); }
-static void help(void) {
-    terminal_write("Prefixes:\n");
-    terminal_write("  ultrium     Ultrium OS commands (ultrium help)\n");
-    terminal_write("  ultrium ai  AI commands (ultrium ai help)\n");
-    terminal_write("  clear       Clear commands (clear help)\n");
-    terminal_write("General commands:\n");
-    terminal_write("  help, reboot, list, go, where, new file/folder, view, write, remove, info\n");
-    terminal_write("Shortcuts: Left/Right, Home/End, Delete, Ctrl+C/U/W/L\n");
-}
-static void clear_help(void) {
-    terminal_write("Clear commands:\n");
-    terminal_write("  clear          Clear the screen\n");
-    terminal_write("  clear history  Erase command history\n");
-}
-static void ultrium_help(void) {
-    terminal_write("Ultrium OS commands:\n");
-    terminal_write("  ultrium help\n");
-    terminal_write("  ultrium version\n");
-    terminal_write("  ultrium system help  (System namespace)\n");
-    terminal_write("  ultrium test help  (Kernel tests)\n");
-    terminal_write("  ultrium ai help  (AI namespace)\n");
-    terminal_write("  ultrium shell help  (Ultrium Shell)\n");
-}
-static void system_help(void) {
-    terminal_write("Ultrium system commands:\n");
-    terminal_write("  ultrium system help\n");
-    terminal_write("  ultrium system info\n");
-    terminal_write("  ultrium system memory help  (Memory namespace)\n");
-    terminal_write("  ultrium system exceptions\n");
-    terminal_write("  ultrium system interrupts help  (Interrupt status)\n");
-}
-static void memory_help(void) {
-    terminal_write("Ultrium memory commands:\n");
-    terminal_write("  ultrium system memory\n");
-    terminal_write("  ultrium system memory help\n");
-    terminal_write("  ultrium system memory test\n");
-    terminal_write("  ultrium system memory map help\n");
-    terminal_write("  ultrium system memory mapping help\n");
-}
-static void memory_map_help(void) {
-    terminal_write("Page table inspection commands:\n");
-    terminal_write("  ultrium system memory map help\n");
-    terminal_write("  ultrium system memory map test\n");
-}
-static void memory_mapping_help(void) {
-    terminal_write("Virtual mapping commands:\n");
-    terminal_write("  ultrium system memory mapping help\n");
-    terminal_write("  ultrium system memory mapping test\n");
-    terminal_write("  ultrium system memory mapping managed test\n");
-}
-static void ai_help(void) {
-    terminal_write("Ultrium AI commands:\n");
-    terminal_write("  ultrium ai help\n");
-    terminal_write("  ultrium ai status\n");
-    terminal_write("AI services are not installed.\n");
-}
-static void test_help(void) {
-    terminal_write("Kernel test commands:\n");
-    terminal_write("  ultrium test help\n");
-    terminal_write("  ultrium test memory\n");
-    terminal_write("  ultrium test interrupts\n");
-    terminal_write("  ultrium test interrupts help  (Interrupt tests)\n");
-    terminal_write("  ultrium test filesystem help  (Filesystem tests)\n");
-    terminal_write("  ultrium test filesystem\n");
-    terminal_write("  ultrium test all\n");
-}
-static void test_interrupts_help(void) {
-    terminal_write("Interrupt test commands:\n");
-    terminal_write("  ultrium test interrupts help\n");
-    terminal_write("  ultrium test interrupts\n");
-}
-static void test_filesystem_help(void) {
-    terminal_write("Filesystem test commands:\n");
-    terminal_write("  ultrium test filesystem help\n");
-    terminal_write("  ultrium test filesystem\n");
-}
 static void version(void) { terminal_write("Ultrium OS " ULTRIUM_VERSION "\n"); }
 static void system_info(void) {
     terminal_write("OS: Ultrium OS\nKernel: " ULTRIUM_VERSION "\nArchitecture: x86_64\nMode: CLI\n");
@@ -166,11 +86,6 @@ static void exception_status(void) {
             "CPU exception handlers installed; TSS/IST check failed\n" :
             "CPU exception handlers: unavailable\n");
 }
-static void interrupts_help(void) {
-    terminal_write("Interrupt status commands:\n");
-    terminal_write("  ultrium system interrupts help\n");
-    terminal_write("  ultrium system interrupts\n");
-}
 static void interrupts_status(void) {
     if (!interrupts_ready()) {
         terminal_write("Hardware interrupts unavailable; keyboard remains polled.\n");
@@ -194,59 +109,166 @@ static void ai_status(void) { terminal_write("AI services are not installed.\n")
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 
-static const struct command commands[] = {
-    {"help", ultrium_help}, {"version", version},
-    {"system help", system_help}, {"system info", system_info},
-    {"system memory", memory_info}, {"system memory help", memory_help},
-    {"system memory map help", memory_map_help},
-    {"system memory mapping help", memory_mapping_help},
-    {"system memory test", memory_test},
-    {"system memory map test", memory_map_test},
-    {"system memory mapping test", mapping_test},
-    {"system memory mapping managed test", managed_test},
-    {"system exceptions", exception_status},
-    {"system interrupts help", interrupts_help},
-    {"system interrupts", interrupts_status},
-    {"test help", test_help}, {"test memory", kernel_tests_memory},
-    {"test interrupts help", test_interrupts_help},
-    {"test interrupts", kernel_tests_interrupts},
-    {"test filesystem help", test_filesystem_help},
-    {"test filesystem", kernel_tests_filesystem},
-    {"test all", kernel_tests_all},
-    {"shell help", ush_help}, {"shell version", ush_version},
-    {"shell compatibility help", ush_compatibility_help},
-    {"shell compatibility status", ush_compatibility_status},
-    {"shell compatibility enable", ush_compatibility_enable},
-    {"shell compatibility disable", ush_compatibility_disable},
-    {"test shell", kernel_tests_shell},
-    {"ai help", ai_help}, {"ai status", ai_status},
+static void reboot(void) { terminal_write("Rebooting...\n"); system_reboot(); }
+
+/* Static metadata is the single source for routing, help and discovery.
+   Parent paths are exact namespaces. An operation names a shared VFS handler;
+   a builtin invokes existing kernel diagnostics without rewriting them. */
+struct ush_command {
+    const char *name, *parent, *description, *usage, *operation;
+    void (*builtin)(void);
+    unsigned minimum, maximum;
+    bool alias;
 };
-static void dispatch(const char *line) {
-    if (!*line) return;
-    if (same(line, "help")) { help(); return; }
-    if (same(line, "clear")) { clear(); return; }
-    if (same(line, "clear help")) { clear_help(); return; }
-    if (same(line, "clear history")) { clear_history(); return; }
-    if (ush_execute(line) != USH_UNKNOWN) return;
-    if (same(line, "reboot")) {
-        terminal_write("Rebooting...\n");
-        system_reboot();
-        return;
-    }
-    if (same(line, "ultrium")) { ultrium_help(); return; }
-    if (same(line, "ultrium ai")) { ai_help(); return; }
-    const char *prefix = "ultrium ";
-    const char *p = line;
-    while (*prefix && *p == *prefix) { ++prefix; ++p; }
-    if (*prefix == '\0') {
-        for (size_t i = 0; i < sizeof(commands)/sizeof(commands[0]); ++i)
-            if (same(p, commands[i].name)) { commands[i].handler(); return; }
-        terminal_write_color("Unknown Ultrium command. Try: ultrium help\n", TERMINAL_MUTED);
-    } else {
-        terminal_write_color("Program not found (external execution unavailable).\n", TERMINAL_MUTED);
-        terminal_write("For built-in commands, use: ultrium help\n");
-    }
+#define G(n,p,d) {n,p,d,"",0,0,0,0,false}
+#define N(n,p,d,u,o,lo,hi) {n,p,d,u,o,0,lo,hi,false}
+#define B(n,p,d,f) {n,p,d,"",0,f,0,0,false}
+#define A(n,d,o,lo,hi) {n,"",d,"",o,0,lo,hi,true}
+static const struct ush_command registry[] = {
+    G("help", "", "Show help; also accepts a command path"),
+    B("clear", "", "Clear screen", clear),
+    B("history", "clear", "Erase command history", clear_history),
+    B("reboot", "", "Restart the machine", reboot),
+    N("list","","List folder contents","[path]","list",0,1),
+    N("go","","Change current folder","path","go",1,1),
+    N("where","","Show current folder","","where",0,0),
+    G("new","","Create an item"),
+    N("file","new","Create an empty file","path","new file",1,1),
+    N("folder","new","Create a folder","path","new folder",1,1),
+    N("view","","Display a file","path","view",1,1),
+    N("write","","Create a file containing text","path text","write",2,15),
+    N("remove","","Remove a file or empty folder","path","remove",1,1),
+    N("info","","Show stored metadata","path","info",1,1),
+    G("file","","Structured file operations"),
+    N("new","file","Create an empty file","path","new file",1,1),
+    N("view","file","Display a file","path","view",1,1),
+    N("write","file","Create a file containing text","path text","write",2,15),
+    N("remove","file","Remove an item","path","remove",1,1),
+    N("info","file","Show stored metadata","path","info",1,1),
+    G("folder","","Structured folder operations"),
+    N("new","folder","Create a folder","path","new folder",1,1),
+    N("list","folder","List folder contents","[path]","list",0,1),
+    N("go","folder","Change current folder","path","go",1,1),
+    N("remove","folder","Remove an item","path","remove",1,1),
+    N("info","folder","Show stored metadata","path","info",1,1),
+    G("ultrium","","Ultrium OS administration"),
+    B("version","ultrium","Kernel version",version),
+    G("system","ultrium","System diagnostics"),
+    B("info","ultrium system","System information",system_info),
+    B("memory","ultrium system","Memory status",memory_info),
+    B("test","ultrium system memory","Slab stress test",memory_test),
+    G("map","ultrium system memory","Page table inspection"),
+    B("test","ultrium system memory map","Page table test",memory_map_test),
+    G("mapping","ultrium system memory","Virtual mapping diagnostics"),
+    B("test","ultrium system memory mapping","Scratch mapping test",mapping_test),
+    G("managed","ultrium system memory mapping","Owned virtual pages"),
+    B("test","ultrium system memory mapping managed","Managed pages test",managed_test),
+    B("exceptions","ultrium system","Exception and IST status",exception_status),
+    B("interrupts","ultrium system","APIC and timer status",interrupts_status),
+    G("test","ultrium","Kernel test suites"),
+    B("memory","ultrium test","Memory and exceptions",kernel_tests_memory),
+    B("interrupts","ultrium test","Timer and keyboard IRQs",kernel_tests_interrupts),
+    B("filesystem","ultrium test","VFS and RAMFS",kernel_tests_filesystem),
+    B("shell","ultrium test","USH command tests",kernel_tests_shell),
+    B("all","ultrium test","All kernel suites",kernel_tests_all),
+    G("ai","ultrium","AI namespace; services unavailable"),
+    B("status","ultrium ai","Report service availability",ai_status),
+    G("shell","ultrium","Ultrium Shell (USH)"),
+    B("version","ultrium shell","USH component version",ush_version),
+    G("compatibility","ultrium shell","Session-only aliases; disabled at boot"),
+    B("status","ultrium shell compatibility","Show alias availability",ush_compatibility_status),
+    B("enable","ultrium shell compatibility","Enable selected aliases",ush_compatibility_enable),
+    B("disable","ultrium shell compatibility","Disable aliases",ush_compatibility_disable),
+    A("ls","list","list",0,1), A("cd","go","go",1,1), A("pwd","where","where",0,0),
+    A("mkdir","new folder","new folder",1,1), A("touch","new file","new file",1,1),
+    A("cat","view","view",1,1), A("rm","remove","remove",1,1)
+};
+#define COMMAND_COUNT (sizeof(registry)/sizeof(registry[0]))
+static const struct ush_command *child(const char *parent, const char *word) {
+    for (size_t i = 0; i < COMMAND_COUNT; ++i)
+        if (same(parent, registry[i].parent) && ush_word_equal(word, registry[i].name))
+            return &registry[i];
+    return 0;
 }
+static void append_word(char *path, const char *word) {
+    size_t n = 0; while (path[n]) ++n;
+    if (n) path[n++] = ' ';
+    while (*word) path[n++] = *word++;
+    path[n] = 0;
+}
+static void command_help(const struct ush_command *command, const char *path) {
+    if (command) {
+        terminal_write(path); terminal_write(" "); terminal_write(command->usage);
+        terminal_write("\n"); terminal_write(command->description); terminal_write("\n");
+    } else terminal_write("Ultrium Shell (USH) " USH_VERSION " commands:\n");
+    for (size_t i = 0; i < COMMAND_COUNT; ++i) {
+        const struct ush_command *c = &registry[i];
+        if (!same(path, c->parent) || (c->alias && !ush_compatibility())) continue;
+        terminal_write("  "); terminal_write(c->name); terminal_write(" ");
+        terminal_write(c->usage); terminal_write("  - "); terminal_write(c->description);
+        terminal_write("\n");
+    }
+    terminal_write("Use '<command path> help' or 'help <command path>'.\n");
+}
+bool ush_registry_valid(void) {
+    for (size_t i = 0; i < COMMAND_COUNT; ++i) {
+        const struct ush_command *c = &registry[i];
+        if (!c->name[0] || c->minimum > c->maximum || (c->operation && c->builtin)) return false;
+        for (size_t j = 0; j < i; ++j)
+            if (same(c->parent, registry[j].parent) && same(c->name, registry[j].name)) return false;
+        if (!c->parent[0]) continue;
+        bool found = false;
+        for (size_t j = 0; j < COMMAND_COUNT; ++j) {
+            char path[USH_INPUT_MAX + 1] = {0};
+            append_word(path, registry[j].parent); append_word(path, registry[j].name);
+            if (same(path, c->parent)) found = true;
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+enum ush_result ush_execute(const char *line) {
+    struct ush_args args;
+    if (ush_tokenize(line, &args) != USH_OK) {
+        terminal_write("Command exceeds input or argument limit.\n"); return USH_USAGE;
+    }
+    if (!args.count) return USH_OK;
+    char path[USH_INPUT_MAX + 1] = {0};
+    size_t used = 0;
+    bool prefix_help = ush_word_equal(args.values[0], "help");
+    if (prefix_help) ++used;
+    const struct ush_command *command = 0;
+    while (used < args.count) {
+        const struct ush_command *next = child(path, args.values[used]);
+        if (!next) break;
+        command = next; append_word(path, command->name); ++used;
+    }
+    if (command && command->alias && !ush_compatibility()) {
+        terminal_write("Command '"); terminal_write(command->name);
+        terminal_write("' is unavailable in native mode.\nUse '");
+        terminal_write(command->description); terminal_write("' instead.\n");
+        return USH_UNAVAILABLE;
+    }
+    bool suffix_help = used + 1 == args.count && ush_word_equal(args.values[used], "help");
+    if ((prefix_help && used == args.count) || suffix_help ||
+        (command && used == args.count && !command->operation && !command->builtin)) {
+        command_help(command, path); return USH_OK;
+    }
+    if (!command || (prefix_help && used != args.count) ||
+        (!command->operation && !command->builtin)) {
+        terminal_write("Unknown command: "); terminal_write(args.values[used < args.count ? used : 0]);
+        terminal_write(". Use 'help' or '<namespace> help'.\n");
+        return USH_UNKNOWN;
+    }
+    size_t count = args.count - used;
+    if (count < command->minimum || count > command->maximum) {
+        terminal_write("Invalid arguments. Usage: "); terminal_write(path); terminal_write(" ");
+        terminal_write(command->usage); terminal_write("\n"); return USH_USAGE;
+    }
+    if (command->operation) return ush_operation(command->operation, count, args.values + used);
+    command->builtin(); return USH_OK;
+}
+static void dispatch(const char *line) { (void)ush_execute(line); }
 /* Expanded preallocated history pending a real memory allocator and filesystem.
    Limit command length to 70 so input stays on one line at common QEMU sizes. */
 #define INPUT_LIMIT 70
