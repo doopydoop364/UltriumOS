@@ -23,7 +23,8 @@ enum vfs_error {
     VFS_NO_SPACE,
     VFS_BAD_HANDLE,
     VFS_BUFFER_TOO_SMALL,
-    VFS_UNSUPPORTED
+    VFS_UNSUPPORTED,
+    VFS_NOT_EMPTY
 };
 
 enum vfs_node_type { VFS_NODE_FILE, VFS_NODE_DIRECTORY };
@@ -37,6 +38,13 @@ struct vfs_dir { uint32_t slot; uint32_t generation; };
 struct vfs_info { enum vfs_node_type type; size_t size; };
 enum vfs_error vfs_stat(const char *absolute_path, struct vfs_info *out);
 
+/* Backends currently mount only at root. Tree removal must be revised before
+   introducing mounts or symbolic links: never cross them implicitly. */
+struct vfs_remove_report { size_t removed; char remaining[VFS_PATH_MAX + 1U]; };
+enum vfs_error vfs_resolve_path(const char *path, const char *cwd, char *out, size_t capacity);
+enum vfs_error vfs_copy(const char *source, const char *destination);
+enum vfs_error vfs_rename(const char *source, const char *destination);
+enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *report);
 bool vfs_init(void);
 enum vfs_error vfs_normalize(const char *path, const char *cwd,
                              char *output, size_t capacity);

@@ -42,7 +42,9 @@ static void normalize(char *line) {
         if (line[i] >= 'A' && line[i] <= 'Z')
             line[i] = (char)(line[i] + ('a' - 'A'));
 }
-static void prompt(void) { terminal_write_color("ultrium> ", TERMINAL_ACCENT); }
+static void prompt(void) {
+    terminal_write_color(ush_confirmation_pending() ? ush_confirmation_prompt() : "ultrium> ", TERMINAL_ACCENT);
+}
 static void version(void) { terminal_write("Ultrium OS " ULTRIUM_VERSION "\n"); }
 static void system_info(void) {
     terminal_write("OS: Ultrium OS\nKernel: " ULTRIUM_VERSION "\nArchitecture: x86_64\nMode: CLI\n");
@@ -137,19 +139,25 @@ static const struct ush_command registry[] = {
     N("folder","new","Create a folder","path","new folder",1,1),
     N("view","","Display a file","path","view",1,1),
     N("write","","Create a file containing text","path text","write",2,15),
-    N("remove","","Remove a file or empty folder","path","remove",1,1),
+    N("remove","","Remove an item; recursion requires -r","path [-r|--recursive] [-y|--yes]","remove",1,5),
     N("info","","Show stored metadata","path","info",1,1),
+    N("copy","","Copy a file; refuse existing destination","source destination","copy",2,2),
+    N("move","","Move an item; refuse existing destination","source destination","move",2,2),
+    N("rename","","Rename an item to an exact destination path","source destination","rename",2,2),
     G("file","","Structured file operations"),
+    N("copy","file","Copy a file","source destination","copy",2,2),
+    N("move","file","Move an item","source destination","move",2,2),
+    N("rename","file","Rename an item","source destination","rename",2,2),
     N("new","file","Create an empty file","path","new file",1,1),
     N("view","file","Display a file","path","view",1,1),
     N("write","file","Create a file containing text","path text","write",2,15),
-    N("remove","file","Remove an item","path","remove",1,1),
+    N("remove","file","Remove an item","path [-r] [-y]","remove",1,5),
     N("info","file","Show stored metadata","path","info",1,1),
     G("folder","","Structured folder operations"),
     N("new","folder","Create a folder","path","new folder",1,1),
     N("list","folder","List folder contents","[path]","list",0,1),
     N("go","folder","Change current folder","path","go",1,1),
-    N("remove","folder","Remove an item","path","remove",1,1),
+    N("remove","folder","Remove an item","path [-r] [-y]","remove",1,5),
     N("info","folder","Show stored metadata","path","info",1,1),
     G("ultrium","","Ultrium OS administration"),
     B("version","ultrium","Kernel version",version),
@@ -181,7 +189,7 @@ static const struct ush_command registry[] = {
     B("disable","ultrium shell compatibility","Disable aliases",ush_compatibility_disable),
     A("ls","list","list",0,1), A("cd","go","go",1,1), A("pwd","where","where",0,0),
     A("mkdir","new folder","new folder",1,1), A("touch","new file","new file",1,1),
-    A("cat","view","view",1,1), A("rm","remove","remove",1,1)
+    A("cat","view","view",1,1), A("rm","remove","remove",1,5), A("cp","copy","copy",2,2), A("mv","move","move",2,2)
 };
 #define COMMAND_COUNT (sizeof(registry)/sizeof(registry[0]))
 static const struct ush_command *child(const char *parent, const char *word) {
@@ -228,6 +236,7 @@ bool ush_registry_valid(void) {
     return true;
 }
 enum ush_result ush_execute(const char *line) {
+    if (ush_confirmation_pending()) return USH_PENDING;
     struct ush_args args;
     if (ush_tokenize(line, &args) != USH_OK) {
         terminal_write("Command exceeds input or argument limit.\n"); return USH_USAGE;
@@ -324,6 +333,7 @@ void shell_run(void) {
             terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_write("^C");
             terminal_newline();
+            if (ush_confirmation_pending()) (void)ush_answer_confirmation("");
             len = caret = 0;
             line[0] = 0;
             selected = history_size;
@@ -376,8 +386,11 @@ void shell_run(void) {
             terminal_input_redraw(line, (unsigned)len, (unsigned)len);
             terminal_newline();
             normalize(line);
-            if (!same(line, "clear history")) save_history(line);
-            dispatch(line);
+            if (ush_confirmation_pending()) (void)ush_answer_confirmation(line);
+            else {
+                if (!same(line, "clear history")) save_history(line);
+                dispatch(line);
+            }
             len = caret = 0;
             line[0] = 0;
             selected = history_size;

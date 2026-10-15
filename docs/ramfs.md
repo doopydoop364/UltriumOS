@@ -1,6 +1,6 @@
 # VFS and RAMFS prototype
 
-Status: implemented on `feature/vfs-ramfs`, stacked on the filesystem design PR. It is not available on `main` until reviewed and merged. RAMFS is volatile; all files and directories are lost at reboot.
+The original VFS/RAMFS prototype is merged on `main`. USH extensions are in the stacked USH draft PRs. RAMFS is volatile; all files and directories are lost at reboot.
 
 ## Current implementation
 
@@ -15,9 +15,9 @@ Limits are deliberately bounded:
 - Total nodes, including root: 128.
 - Simultaneous file handles and directory iterators: 64 of each.
 
-Names are case-sensitive in the VFS. Shell command names are case-insensitive; command arguments preserve their case. Paths support repeated separators, `.`, and `..`; attempts to move above `/` remain at root. Paths containing control characters or overlong components are rejected. Shell arguments currently do not support quoting or spaces in names.
+Names are case-sensitive in the VFS. Shell command names are case-insensitive; command arguments preserve their case. Paths support repeated separators, `.`, and `..`; attempts to move above `/` remain at root. Paths containing control characters or overlong components are rejected. See the USH grammar for shell quoting support.
 
-The shell has unprefixed `pwd`, `ls [path]`, `cd path`, `mkdir path`, `touch path`, `write path text`, `cat path`, and `rm path` commands. Each command accepts a `help` argument. `touch` creates an empty file and succeeds when the path already names a regular file. `write` creates a new file and writes the unquoted remainder of the command; it does not overwrite an existing file. Use `rm` before creating a replacement. Quoting is not parsed, and repeated spaces are collapsed by the current shell.
+The native USH vocabulary, optional compatibility aliases and safety contracts are documented in [Ultrium Shell](ultrium-shell.md). Shell actions validate intermediate path traversal; low-level VFS operations require canonical absolute paths. VFS stat reports stored type and file byte length. RAMFS supports allocation-free rename and copy with allocation rollback.
 
 ## Ownership and failure behavior
 
@@ -40,7 +40,7 @@ python3 tools/qemu-memory-test.py 'ultrium test filesystem'
 python3 tools/qemu-memory-test.py 'ultrium test all'
 ```
 
-For an interactive shell check, run `mkdir /demo`, `write /demo/hello Hello`, `ls /demo`, `cat /demo/hello`, `cd /demo`, `pwd`, `cd /`, `rm /demo/hello`, and `rm /demo`. Expected output includes the `hello` listing, the file text, and `/demo` from `pwd`.
+For interactive checks use the native examples in [Ultrium Shell](ultrium-shell.md).
 
 ## Current boundaries
 
