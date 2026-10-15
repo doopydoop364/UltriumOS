@@ -42,4 +42,7 @@ bool vmm_region_stats_get(struct vmm_region_stats *stats);
 /* Borrow the architectural local APIC MMIO page; it is never PMM-owned. */
 void *vmm_map_local_apic(uint64_t physical_address);
 void *vmm_map_ioapic(uint64_t physical_address);
+/* Borrow up to 16 pages of uncached, non-executable device MMIO. The mapping
+   is permanent, never PMM-owned, and must not be passed to vmm_free_pages. */
+void *vmm_map_mmio(uint64_t physical_address, size_t length);
 #endif

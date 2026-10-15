@@ -66,6 +66,9 @@ static void hcf(void) {
 #include "system/exceptions.h"
 #include "system/interrupts.h"
 #include "system/power.h"
+#include "pci/pci.h"
+#include "storage/block.h"
+#include "storage/virtio_blk.h"
 #include "keyboard/keyboard.h"
 #include "version.h"
 
@@ -109,6 +112,9 @@ void kmain(void) {
         hcf();
     }
     terminal_write("RAM FILESYSTEM READY\n");
+    pci_init();
+    size_t block_devices = virtio_blk_probe();
+    terminal_write(block_devices ? "VIRTIO BLOCK DEVICE READY\n" : "NO BLOCK DEVICE (DISKLESS BOOT)\n");
     if (interrupts_init()) {
         terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
         if (keyboard_init_interrupts())

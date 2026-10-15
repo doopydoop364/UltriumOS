@@ -694,3 +694,28 @@ void *vmm_map_ioapic(uint64_t physical_address) {
     return map_fixed_mmio_page(physical_address, VMM_REGION_MAX_PAGES + 1,
                                &ioapic_va);
 }
+
+/* Borrowed uncached device MMIO (for example PCI BARs). Pages come from a
+   fixed bump pool after the APIC pages and are never PMM-owned or unmapped;
+   a driver maps its BAR once for the lifetime of the kernel. */
+#define MMIO_POOL_FIRST (VMM_REGION_MAX_PAGES + 2U)
+#define MMIO_POOL_PAGES 16U
+static uint64_t mmio_va[MMIO_POOL_PAGES];
+static unsigned mmio_used;
+void *vmm_map_mmio(uint64_t physical_address, size_t length) {
+    uint64_t offset = physical_address & 0xfffULL, base = physical_address - offset;
+    if (!length || length > MMIO_POOL_PAGES * PAGE_SIZE || physical_address >= (1ULL << 47) ||
+        length > (size_t)(~0ULL >> 17) || offset + length < offset) return (void *)0;
+    unsigned pages = (unsigned)((offset + length + PAGE_SIZE - 1) / PAGE_SIZE);
+    if (pages > MMIO_POOL_PAGES - mmio_used) return (void *)0;
+    unsigned first = mmio_used;
+    for (unsigned i = 0; i < pages; ++i) {
+        if (!map_fixed_mmio_page(base + (uint64_t)i * PAGE_SIZE, MMIO_POOL_FIRST + first + i,
+                                 &mmio_va[first + i])) {
+            mmio_used = first + i;  /* Already-mapped pages stay mapped, but unused. */
+            return (void *)0;
+        }
+    }
+    mmio_used = first + pages;
+    return (void *)(uintptr_t)(mmio_va[first] + offset);
+}

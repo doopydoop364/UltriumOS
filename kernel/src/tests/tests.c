@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "tests.h"
+#include "tests_internal.h"
 #include "terminal/terminal.h"
 #include "memory/pmm.h"
 #include "memory/heap.h"
@@ -50,8 +51,6 @@ static void report_number(uint64_t value) {
 
 /* A NULL reason means pass. Tests own their cleanup and must leave the
    allocator counters at their entry values, including after failure. */
-typedef const char *(*test_fn)(void);
-struct test_case { const char *name; test_fn run; };
 static const char *physical_self(void) { return pmm_self_test() ? 0 : "PMM self-test failed"; }
 static const char *exception_descriptors(void) {
     return exceptions_self_test() ? 0 : "TSS, task register, or double-fault IST invalid";
@@ -1101,14 +1100,17 @@ static void run(const struct test_case *cases, size_t count) {
 void kernel_tests_memory(void) { run(memory_cases, sizeof(memory_cases)/sizeof(memory_cases[0])); }
 void kernel_tests_interrupts(void) { run(interrupt_cases, sizeof(interrupt_cases)/sizeof(interrupt_cases[0])); }
 void kernel_tests_filesystem(void) { run(filesystem_cases, sizeof(filesystem_cases)/sizeof(filesystem_cases[0])); }
+void kernel_tests_storage(void) { run(storage_cases, storage_case_count); }
+void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
         sizeof(filesystem_cases)/sizeof(filesystem_cases[0]),
-        sizeof(shell_cases)/sizeof(shell_cases[0])
+        sizeof(shell_cases)/sizeof(shell_cases[0]),
+        storage_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

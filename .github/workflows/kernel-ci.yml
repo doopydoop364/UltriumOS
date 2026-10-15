@@ -48,3 +48,10 @@ jobs:
           python3 tools/qemu-power-test.py --shutdown
           python3 tools/qemu-power-test.py --reboot
           python3 tools/qemu-power-test.py --unsupported
+
+      - name: Run block-device tests against disposable virtio disks
+        run: |
+          python3 tools/qemu-storage-test.py --diskless
+          python3 tools/qemu-storage-test.py --disk
+          python3 tools/qemu-storage-test.py --disk-4k
+          python3 tools/qemu-storage-test.py --disk-readonly
