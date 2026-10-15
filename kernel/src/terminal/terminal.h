@@ -12,4 +12,7 @@ void terminal_input_redraw(const char *line, unsigned length, unsigned caret);
 void terminal_putc_color(char ch, enum terminal_color color);
 void terminal_write_color(const char *text, enum terminal_color color);
 void terminal_write(const char *text);
+/* Bounded output capture is inactive except during explicit kernel tests. */
+void terminal_test_capture(int enabled);
+int terminal_test_contains(const char *text);
 #endif

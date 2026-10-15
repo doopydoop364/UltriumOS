@@ -23,25 +23,44 @@ void ush_compatibility_status(void) {
 void ush_compatibility_enable(void) { compatibility = true; ush_compatibility_status(); }
 void ush_compatibility_disable(void) { compatibility = false; ush_compatibility_status(); }
 
-enum ush_result ush_tokenize(const char *line, struct ush_args *args) {
-    args->count = 0;
+static enum ush_result tokenize(const char *line, struct ush_args *args, bool partial) {
+    args->count = 0; args->error = 0; args->trailing_space = false;
     size_t n = 0;
     while (line[n]) {
-        if (n == USH_INPUT_MAX) return USH_USAGE;
-        args->storage[n] = line[n]; ++n;
+        if (n == USH_INPUT_MAX) { args->error = "Command exceeds 70 characters."; return USH_USAGE; }
+        if ((unsigned char)line[n] < 32 || (unsigned char)line[n] > 126) {
+            args->error = "Unsupported control or non-ASCII character."; return USH_USAGE;
+        }
+        ++n;
     }
-    args->storage[n] = 0;
-    char *p = args->storage;
-    while (*p) {
-        while (*p == ' ') ++p;
-        if (!*p) break;
-        if (args->count == USH_ARG_MAX) return USH_USAGE;
-        args->values[args->count++] = p;
-        while (*p && *p != ' ') ++p;
-        if (*p) *p++ = 0;
+    size_t read = 0, write = 0;
+    while (read < n) {
+        while (read < n && line[read] == ' ') ++read;
+        if (read == n) break;
+        if (args->count == USH_ARG_MAX) { args->error = "Too many arguments (maximum 16)."; return USH_USAGE; }
+        args->trailing_space = false;
+        args->starts[args->count] = read;
+        args->values[args->count++] = args->storage + write;
+        char quote = 0;
+        while (read < n) {
+            char c = line[read++];
+            if (c == '\\') {
+                if (read == n) { args->error = "Trailing escape requires a character."; return USH_USAGE; }
+                args->storage[write++] = line[read++];
+            } else if (quote) {
+                if (c == quote) quote = 0;
+                else args->storage[write++] = c;
+            } else if (c == '\'' || c == '"') quote = c;
+            else if (c == ' ') { args->trailing_space = true; break; }
+            else args->storage[write++] = c;
+        }
+        if (quote && !partial) { args->error = "Unterminated quote."; return USH_USAGE; }
+        args->storage[write++] = 0;
     }
     return USH_OK;
 }
+enum ush_result ush_tokenize(const char *line, struct ush_args *args) { return tokenize(line, args, false); }
+enum ush_result ush_tokenize_prefix(const char *line, struct ush_args *args) { return tokenize(line, args, true); }
 static enum ush_result failure(enum vfs_error error) {
     if (error == VFS_OK) return USH_OK;
     terminal_write("Filesystem operation failed: ");
@@ -87,9 +106,12 @@ static bool protected_path(const char *path) {
                     (cwd[n] == '/' || cwd[n] == 0));
 }
 static char removal_path[VFS_PATH_MAX + 1U];
+static void report_removed(const char *path) {
+    terminal_write("Removed: "); terminal_write(path); terminal_write("\n");
+}
 static enum ush_result remove_tree(const char *path) {
     struct vfs_remove_report report;
-    enum vfs_error error = vfs_remove_tree(path, &report);
+    enum vfs_error error = vfs_remove_tree_observe(path, &report, report_removed);
     terminal_write("Removed items: "); number(report.removed); terminal_write("\n");
     if (error != VFS_OK) {
         terminal_write("Removal stopped. Remaining tree: "); terminal_write(path);

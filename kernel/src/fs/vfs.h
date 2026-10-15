@@ -45,6 +45,10 @@ enum vfs_error vfs_resolve_path(const char *path, const char *cwd, char *out, si
 enum vfs_error vfs_copy(const char *source, const char *destination);
 enum vfs_error vfs_rename(const char *source, const char *destination);
 enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *report);
+/* Observer receives a borrowed path after each successful unlink. It must not
+   mutate the filesystem or retain the pointer. Used for shell partial-progress reporting. */
+enum vfs_error vfs_remove_tree_observe(const char *path, struct vfs_remove_report *report,
+                                      void (*removed)(const char *path));
 bool vfs_init(void);
 enum vfs_error vfs_normalize(const char *path, const char *cwd,
                              char *output, size_t capacity);

@@ -39,3 +39,6 @@ jobs:
 
       - name: Run shell and keyboard editing regression in QEMU
         run: python3 tools/qemu-memory-test.py --keyboard-regression
+
+      - name: Run USH quoting, completion and removal keyboard regression
+        run: python3 tools/qemu-memory-test.py --shell-regression

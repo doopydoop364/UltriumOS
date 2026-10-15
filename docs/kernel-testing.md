@@ -11,10 +11,11 @@ ultrium test interrupts help
 ultrium test interrupts
 ultrium test filesystem help
 ultrium test filesystem
+ultrium test shell
 ultrium test all
 ```
 
-`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `filesystem` runs four RAMFS/VFS tests. `all` runs all groups (20 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
+`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `filesystem` runs eight RAMFS/VFS tests. `shell` runs seven USH cases for native/structured commands, registry/help, compatibility, safe operations, quoting, completion and output contracts. `all` runs all groups (31 cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
 
 The suite wraps the existing PMM, heap, page-table, scratch-mapping, and managed-page self-tests. Ownership cases check valid allocate/release cycles, double-free and stale-handle rejection after physical reuse, generation changes, invalid and forged handles, injected exhaustion, and accounting restoration. Other cases check four simultaneous physical allocations, heap block isolation, 32 managed mappings, bounded-pool exhaustion, stale translation removal, and cleanup. The virtual-region case checks single and multi-page mappings, boundary access, noncontiguous physical backing, translation, repeated reuse, invalid frees, both backing-frame and page-table rollback, and exhaustion of all 4096 pages and 64 allocation records. The permission case checks RW/NX defaults, read-only and RX updates, invalid W^X/input rejection, CR0.WP/NXE configuration, and cleanup without intentionally faulting. The RAMFS cases check normalized paths, file contents and EOF, directory iteration, generation-checked handle reuse, allocation rollback, and allocator accounting. The original slab stress code has one implementation shared by both command paths.
 
@@ -28,6 +29,7 @@ python3 tools/qemu-memory-test.py 'ultrium test interrupts'
 python3 tools/qemu-memory-test.py 'ultrium test filesystem'
 python3 tools/qemu-memory-test.py 'ultrium system memory test'
 python3 tools/qemu-memory-test.py --keyboard-regression
+python3 tools/qemu-memory-test.py --shell-regression
 make run TOOLCHAIN=llvm
 ```
 
@@ -43,3 +45,9 @@ The Python script uses only the standard library. It boots UEFI QEMU, types the 
 ## Audit and limits
 
 Low-memory exhaustion of all physical frames and generation-counter exhaustion are not run in QEMU. The suite injects a deterministic PMM allocation failure and exercises stale generations across actual frame reuse. Tests do not mutate allocator metadata or map arbitrary physical memory. A failed cleanup is reported, but the current allocator has no recovery facility for every corrupted state. The test suite assumes the current single-CPU kernel and runs after normal initialization.
+
+## USH keyboard regression
+
+`--shell-regression` runs two sessions in one QEMU boot through real PS/2 events. It checks native boot state, alias toggling, quoted names/text, unique command/namespace/path completion, ambiguous completion listing and input restoration, incomplete quote rejection, suggestions, middle editing, history, rejected 71-character input and edited removal confirmations (empty/no/Ctrl+C/yes). It uses explicit `ultrium test shell begin` and `ultrium test shell interactive` diagnostics to capture a bounded 8192-byte terminal-output buffer, verify the resulting VFS fixture and output, clean up, and require restored heap/frame accounting. Capture is off during normal shell use and never mirrors arbitrary commands to COM1. UART still carries test reports only. Any capture overflow fails verification.
+
+To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` to an absolute `.ppm` path while running `--shell-regression`. Existing memory/IRQ and keyboard checks remain separate. The harness now fails immediately on a nonzero test-failure summary.

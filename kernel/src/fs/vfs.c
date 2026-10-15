@@ -192,7 +192,8 @@ enum vfs_error vfs_rename(const char *source, const char *destination) {
     if (!canonical(source) || !canonical(destination)) return VFS_INVALID_PATH;
     return backend ? backend->rename(source, destination) : VFS_BAD_HANDLE;
 }
-enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *report) {
+enum vfs_error vfs_remove_tree_observe(const char *path, struct vfs_remove_report *report,
+                                      void (*removed)(const char *path)) {
     if (!report) return VFS_BAD_HANDLE;
     report->removed = 0; report->remaining[0] = 0;
     if (!canonical(path) || !path[1]) return VFS_INVALID_PATH;
@@ -226,6 +227,7 @@ enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *repor
         error = vfs_unlink(current);
         if (error != VFS_OK) break;
         ++report->removed;
+        if (removed) removed(current);
         size_t count = bounded_length(current, VFS_PATH_MAX);
         if (count == base) return VFS_OK;
         pop_component(current, &count);
@@ -235,4 +237,8 @@ enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *repor
         report->remaining[i] = current[i]; if (!current[i]) break;
     }
     return error;
+}
+
+enum vfs_error vfs_remove_tree(const char *path, struct vfs_remove_report *report) {
+    return vfs_remove_tree_observe(path, report, 0);
 }
