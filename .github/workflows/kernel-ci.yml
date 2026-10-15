@@ -42,3 +42,9 @@ jobs:
 
       - name: Run USH quoting, completion and removal keyboard regression
         run: python3 tools/qemu-memory-test.py --shell-regression
+
+      - name: Run guest shutdown, reboot and unsupported-ACPI tests
+        run: |
+          python3 tools/qemu-power-test.py --shutdown
+          python3 tools/qemu-power-test.py --reboot
+          python3 tools/qemu-power-test.py --unsupported

@@ -3,6 +3,7 @@
 #include "keyboard/keyboard.h"
 #include "terminal/terminal.h"
 #include "system/reboot.h"
+#include "system/power.h"
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "system/exceptions.h"
@@ -87,6 +88,8 @@ static void ai_status(void) { terminal_write("AI services are not installed.\n")
 static void clear(void) { terminal_clear(); }
 static void clear_history(void);
 
+static void power_status_command(void) { power_status(); }
+static void shutdown_command(void) { power_shutdown(); }
 static void reboot(void) { terminal_write("Rebooting...\n"); system_reboot(); }
 
 /* Static metadata is the single source for routing, help and discovery.
@@ -107,6 +110,7 @@ static const struct ush_command registry[] = {
     B("clear", "", "Clear screen", clear),
     B("history", "clear", "Erase command history", clear_history),
     B("reboot", "", "Restart the machine", reboot),
+    B("shutdown", "", "Power off the machine (ACPI)", shutdown_command),
     N("list","","List folder contents","[path]","list",0,1),
     N("go","","Change current folder","path","go",1,1),
     N("where","","Show current folder","","where",0,0),
@@ -147,6 +151,9 @@ static const struct ush_command registry[] = {
     B("test","ultrium system memory mapping","Scratch mapping test",mapping_test),
     G("managed","ultrium system memory mapping","Owned virtual pages"),
     B("test","ultrium system memory mapping managed","Managed pages test",managed_test),
+    G("power","ultrium system","Power management"),
+    B("status","ultrium system power","ACPI power-off support",power_status_command),
+    B("shutdown","ultrium system power","Power off the machine (ACPI)",shutdown_command),
     B("exceptions","ultrium system","Exception and IST status",exception_status),
     B("interrupts","ultrium system","APIC and timer status",interrupts_status),
     G("test","ultrium","Kernel test suites"),

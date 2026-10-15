@@ -30,6 +30,11 @@ static volatile struct limine_hhdm_request hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID, .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_rsdp_request rsdp_request = {
+    .id = LIMINE_RSDP_REQUEST_ID, .revision = 0
+};
+
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
 
@@ -60,6 +65,7 @@ static void hcf(void) {
 #include "fs/vfs.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
+#include "system/power.h"
 #include "keyboard/keyboard.h"
 #include "version.h"
 
@@ -86,6 +92,10 @@ void kmain(void) {
     }
     vmm_init(hhdm_request.response->offset);
     terminal_write("PHYSICAL MEMORY READY\n");
+    /* Base revision 4+ reports the RSDP as an HHDM virtual address. */
+    power_init(memmap_request.response, hhdm_request.response->offset,
+               rsdp_request.response ? (uint64_t)(uintptr_t)rsdp_request.response->address : 0);
+    terminal_write(power_available() ? "ACPI SOFT-OFF READY\n" : "ACPI SOFT-OFF UNAVAILABLE\n");
     terminal_write(vmm_self_test() ? "PAGE TABLE SELF TEST PASSED\n" : "PAGE TABLE SELF TEST FAILED\n");
     terminal_write(vmm_mapping_init() ? "SCRATCH VIRTUAL MAPPING READY\n" : "SCRATCH VIRTUAL MAPPING UNAVAILABLE\n");
     terminal_write(pmm_self_test() ? "MEMORY SELF TEST PASSED\n" : "MEMORY SELF TEST FAILED\n");

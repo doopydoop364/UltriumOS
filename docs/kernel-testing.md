@@ -51,3 +51,7 @@ Low-memory exhaustion of all physical frames and generation-counter exhaustion a
 `--shell-regression` runs two sessions in one QEMU boot through real PS/2 events. It checks native boot state, alias toggling, quoted names/text, unique command/namespace/path completion, ambiguous completion listing and input restoration, incomplete quote rejection, suggestions, middle editing, history, rejected 71-character input and edited removal confirmations (empty/no/Ctrl+C/yes). It uses explicit `ultrium test shell begin` and `ultrium test shell interactive` diagnostics to capture a bounded 8192-byte terminal-output buffer, verify the resulting VFS fixture and output, clean up, and require restored heap/frame accounting. Capture is off during normal shell use and never mirrors arbitrary commands to COM1. UART still carries test reports only. Any capture overflow fails verification.
 
 To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` to an absolute `.ppm` path while running `--shell-regression`. Existing memory/IRQ and keyboard checks remain separate. The harness now fails immediately on a nonzero test-failure summary.
+
+## Power tests
+
+`python3 tools/qemu-power-test.py --shutdown|--reboot|--unsupported` verifies guest power-off, reset and the ACPI-disabled failure path; see `docs/power-management.md`.
