@@ -27,7 +27,7 @@ def main():
         "ultrium test ultriumfs": 20,
         "ultrium test ufs2": 16,
         "ultrium test ufs2fs": 29,
-        "ultrium test ufs2crash": 4,
+        "ultrium test ufs2crash": 12,
         "ultrium test storage": 7,
         "ultrium test shell": 7,
     }.get(command_text)

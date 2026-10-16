@@ -352,6 +352,7 @@ bool block_memory_copy(struct block_device *to, struct block_device *from) {
     struct memory_block *a = memory_of(to), *b = memory_of(from);
     if (!a || !b || a == b || a->bytes != b->bytes || to->block_size != from->block_size) return false;
     for (uint64_t i = 0; i < a->bytes; ++i) a->data[i] = b->data[i];
+    if (a->dirty) for (uint64_t i = 0; i < (to->block_count + 7) / 8; ++i) a->dirty[i] = 0xFF;   /* every block may now differ from the snapshot */
     a->pending_count = 0; a->crashed = false; a->crash_at = -1; a->events = 0;
     return true;
 }
