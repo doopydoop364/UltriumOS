@@ -1,4 +1,5 @@
 #include "ush.h"
+#include "processes/process_cmd.h"
 #include "storage/storage_ops.h"
 #include "terminal/terminal.h"
 
@@ -163,6 +164,8 @@ static enum ush_result remove_item(size_t argc, char **argv) {
     return ush_request_confirmation(question, removal_answer) ? USH_PENDING : USH_USAGE;
 }
 enum ush_result ush_operation(const char *name, size_t argc, char **argv) {
+    if (name[0] == 'p' && name[1] == 'r' && name[2] == 'o' && name[3] == 'c' && name[4] == 'e' && name[5] == 's' && name[6] == 's' && name[7] == ' ')
+        return process_operation(name + 8, argc, argv);
     if (name[0] == 's' && name[1] == 't' && name[2] == 'o' && name[3] == 'r' && name[4] == 'a' && name[5] == 'g' && name[6] == 'e' && name[7] == ' ')
         return storage_operation(name + 8, argc, argv);
     if (ush_word_equal(name, "remove")) return remove_item(argc, argv);

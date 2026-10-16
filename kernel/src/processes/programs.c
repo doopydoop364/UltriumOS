@@ -14,12 +14,14 @@ EMBED(hello)
 EMBED(counter)
 EMBED(filedemo)
 EMBED(fpudemo)
+EMBED(spin)
 
 static const struct { const char *name; const uint8_t *start, *end; } programs[] = {
     {"hello", ultrium_prog_hello_start, ultrium_prog_hello_end},
     {"counter", ultrium_prog_counter_start, ultrium_prog_counter_end},
     {"filedemo", ultrium_prog_filedemo_start, ultrium_prog_filedemo_end},
     {"fpudemo", ultrium_prog_fpudemo_start, ultrium_prog_fpudemo_end},
+    {"spin", ultrium_prog_spin_start, ultrium_prog_spin_end},
 };
 #define COUNT (sizeof(programs) / sizeof(programs[0]))
 

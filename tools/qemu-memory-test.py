@@ -18,12 +18,14 @@ def main():
     command_text = sys.argv[1] if len(sys.argv) > 1 else "ultrium test memory"
     keyboard_regression = command_text == "--keyboard-regression"
     shell_regression = command_text == "--shell-regression"
+    process_regression = command_text == "--process-regression"
     expected_count = {
         "ultrium system memory test": 1,
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 8,
-        "ultrium test all": 146,
+        "ultrium test all": 151,
+        "ultrium test processshell": 5,
         "ultrium test programs": 6,
         "ultrium test elf": 6,
         "ultrium test syscalls": 4,
@@ -38,10 +40,10 @@ def main():
         "ultrium test storage": 7,
         "ultrium test shell": 7,
     }.get(command_text)
-    if not keyboard_regression and not shell_regression and command_text not in (
+    if not keyboard_regression and not shell_regression and not process_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
             "ultrium test filesystem", "ultrium test shell",
-            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf", "ultrium test programs",
+            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf", "ultrium test programs", "ultrium test processshell",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
@@ -200,6 +202,29 @@ def main():
                     run_line("ultrium test shell interactive")
                     wait_for_summary("TEST SUMMARY passed=1 failed=0", repetition + 1)
                     print("USH keyboard session", repetition + 1, "passed", flush=True)
+                print(output.decode(errors="replace"), end="")
+                return 0
+
+            if process_regression:
+                def run_line(text):
+                    type_text(text)
+                    send_key("ret")
+
+                run_line("ultrium test shell begin")
+                run_line("run hello")
+                run_line("run -b spin")
+                run_line("jobs")
+                run_line("run nothing")
+                run_line("run spin")
+                time.sleep(1.5)           # the foreground program never exits: interrupt it from the keyboard
+                send_key("ctrl-c")
+                run_line("ultrium test interrupts")
+                wait_for_summary("TEST SUMMARY passed=2 failed=0", 1)
+                run_line("jobs")          # the background program is still running
+                run_line("ultrium system processes")
+                run_line("ultrium test shell processes")
+                wait_for_summary("TEST SUMMARY passed=1 failed=0", 1)
+                print("USH process session passed", flush=True)
                 print(output.decode(errors="replace"), end="")
                 return 0
 

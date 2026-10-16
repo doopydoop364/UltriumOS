@@ -118,7 +118,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | System calls | `feature/syscalls` | **implemented, QEMU-tested** (`docs/syscall-abi.md`, `shared/abi/ultrium_syscall.h`, `ultrium test syscalls`, 4 cases): `int 0x80`, 11 calls incl. VFS-backed open/read/write/close, validated all-or-nothing user buffers, per-process descriptors released at exit |
 | ELF64 loader | `feature/elf-loader` | **implemented, QEMU-tested** (`docs/elf-loader.md`, `ultrium test elf`, 6 cases): static `ET_EXEC` x86-64 only, 55 header/segment mutations, 4000-image fuzz, loading from the VFS |
 | Userspace runtime and programs | `feature/userspace-runtime` | **implemented, QEMU-tested** (`os/`, `docs/userspace-runtime.md`, `ultrium test programs`, 6 cases): hello, counter, filedemo, fpudemo run in ring 3 concurrently, loaded from `/bin` through the VFS |
-| Shell process commands | `feature/process-shell` | not started |
+| Shell process commands | `feature/process-shell` | **implemented, QEMU-tested** (USH 0.6: `run [-b]`, `jobs`, `terminate`, `ultrium system processes`; `ultrium test processshell` 5 cases + `--process-regression` through real PS/2 events incl. Ctrl+C). `docs/ultrium-shell.md` |
 | Integration tests | `feature/process-integration` | not started |
 
 ## Ring 3 facts verified by test

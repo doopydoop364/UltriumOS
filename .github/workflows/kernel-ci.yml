@@ -43,6 +43,9 @@ jobs:
       - name: Run USH quoting, completion and removal keyboard regression
         run: python3 tools/qemu-memory-test.py --shell-regression
 
+      - name: Run process commands through real keyboard events (run, background, jobs, Ctrl+C)
+        run: python3 tools/qemu-memory-test.py --process-regression
+
       - name: Run guest shutdown, reboot and unsupported-ACPI tests
         run: |
           python3 tools/qemu-power-test.py --shutdown
