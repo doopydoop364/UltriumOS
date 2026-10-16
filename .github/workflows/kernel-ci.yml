@@ -60,3 +60,11 @@ jobs:
         run: |
           python3 tools/qemu-persistence-test.py
           python3 tools/qemu-persistence-test.py --v1
+
+      - name: Run UltriumFS 2 recovery matrix (simulated power cuts at every I/O event)
+        run: python3 tools/qemu-memory-test.py 'ultrium test ufs2crash'
+
+      - name: Run UltriumFS 2 recovery on a virtio disk with independent host verification
+        run: |
+          python3 tools/qemu-ufs2-recovery-test.py
+          python3 tools/ufs2-host-negative-controls.py

@@ -69,3 +69,7 @@ To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` t
 ## UltriumFS 2 journal tests
 
 `ultrium test ufs2` (16 cases, part of `ultrium test all`) runs the journal layer on a memory device with a **simulated volatile write cache** (`block_memory_enable_cache`): writes stay pending until a flush and a simulated power cut can keep all, none, a prefix, a suffix (reordering), a seeded-random subset, or a torn prefix of them. See `docs/ultriumfs-v2-journal.md`.
+
+## UltriumFS 2 recovery matrix
+
+`ultrium test ufs2crash` (12 cases, ~6,500 interrupted runs, several minutes, **not** in `ultrium test all`) cuts power before every I/O event of real UltriumFS 2 file operations and checks the recovered volume; `python3 tools/qemu-ufs2-recovery-test.py` repeats deterministic cuts on a virtio disk with independent host verification; `python3 tools/ufs2-host-negative-controls.py` proves the host reader detects deliberate corruption. See `docs/ultriumfs-v2-crash-testing.md` for the models, allowed results and limits. Run it with `python3 tools/qemu-memory-test.py 'ultrium test ufs2crash'`.

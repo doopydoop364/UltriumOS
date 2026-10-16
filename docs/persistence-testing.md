@@ -66,3 +66,7 @@ Multi-block files, growth, disk full, space reuse, metadata exhaustion, invalid 
 ## Not tested
 
 Real power loss (no journal; see the format document), physical disks and controllers other than QEMU virtio-blk, device disappearance on real hardware, a hung device (timeout/reset path), the persistence of data written by *other* hosts or QEMU versions. An abrupt stop is simulated by killing QEMU, whose host page cache survives; that is not a power-loss test.
+
+## Interrupted-operation recovery
+
+Targeted recovery tests (files larger than 4 MiB, fragmented files, nested folders, renames, block reuse, deterministic power cuts on the virtio disk, an abrupt QEMU stop during a large write) are in `tools/qemu-ufs2-recovery-test.py`; see `docs/ultriumfs-v2-crash-testing.md`. They distinguish simulated cache loss, deterministic cuts, abrupt QEMU termination and physical power loss (not tested).
