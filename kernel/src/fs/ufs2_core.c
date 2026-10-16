@@ -223,6 +223,10 @@ enum vfs_error ufs2_sb_update(struct ufs2_core *c) {
 
 /* ---- format ---- */
 enum vfs_error ufs2_core_format(struct block_device *d, const char *label, const uint8_t *uuid) {
+    return ufs2_core_format_with(d, label, uuid, 0, 0);
+}
+enum vfs_error ufs2_core_format_with(struct block_device *d, const char *label, const uint8_t *uuid,
+                                     enum vfs_error (*populate)(struct ufs2_core *, void *), void *context) {
     if (!d || !d->registered) return VFS_IO;
     if (d->holders) return VFS_BUSY;
     if (!(d->flags & BLOCK_FLAG_SCRATCH)) return VFS_DENIED;
@@ -246,6 +250,12 @@ enum vfs_error ufs2_core_format(struct block_device *d, const char *label, const
     if (e == VFS_OK) e = raw_write(d, per, total - 1, buf_data);
     for (uint32_t b = 0; e == VFS_OK && b < sb.geo.journal_blocks; ++b) e = raw_write(d, per, sb.geo.journal_start + b, buf_data);
     if (e == VFS_OK) e = from_block(block_flush(d));
+    if (e == VFS_OK && populate) {   /* the filesystem writes its bitmap, inode table and root before any superblock is valid */
+        struct ufs2_core tmp; memset(&tmp, 0, sizeof(tmp));
+        tmp.dev = d; tmp.per = per; tmp.sb = sb;
+        e = populate(&tmp, context);
+        if (e == VFS_OK) e = from_block(block_flush(d));
+    }
     if (e == VFS_OK) { sb_encode(&sb, total - 1, buf_super); e = raw_write(d, per, total - 1, buf_super); }
     if (e == VFS_OK) e = from_block(block_flush(d));
     if (e == VFS_OK) { sb_encode(&sb, 0, buf_super); e = raw_write(d, per, 0, buf_super); }
@@ -335,6 +345,14 @@ static void drop_stage(struct ufs2_core *c) {
     if (c->stage) { vmm_free_pages(c->stage); c->stage = 0; }
 }
 enum vfs_error ufs2_core_open(struct ufs2_core *c, struct block_device *d, bool want_write) {
+    return ufs2_core_open_ex(c, d, want_write, true);
+}
+enum vfs_error ufs2_core_mark_mounted(struct ufs2_core *c) {
+    if (c->read_only) return VFS_READ_ONLY;
+    c->sb.state = UFS2_STATE_MOUNTED;
+    return ufs2_sb_update(c);
+}
+enum vfs_error ufs2_core_open_ex(struct ufs2_core *c, struct block_device *d, bool want_write, bool mark_mounted) {
     memset(c, 0, sizeof(*c));
     if (!d || !d->registered) return VFS_IO;
     if (d->block_size < 512 || UFS2_BLOCK % d->block_size) return VFS_UNSUPPORTED;
@@ -369,9 +387,10 @@ enum vfs_error ufs2_core_open(struct ufs2_core *c, struct block_device *d, bool 
             }
             if (e != VFS_OK) { drop_stage(c); block_release(d); memset(c, 0, sizeof(*c)); return e; }
         }
-        c->sb.state = UFS2_STATE_MOUNTED;
-        e = ufs2_sb_update(c);
-        if (e != VFS_OK) { drop_stage(c); block_release(d); memset(c, 0, sizeof(*c)); return e; }
+        if (mark_mounted) {
+            e = ufs2_core_mark_mounted(c);
+            if (e != VFS_OK) { drop_stage(c); block_release(d); memset(c, 0, sizeof(*c)); return e; }
+        }
     }
     c->open = true;
     return VFS_OK;

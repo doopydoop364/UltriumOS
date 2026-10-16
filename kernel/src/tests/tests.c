@@ -1110,10 +1110,11 @@ void kernel_tests_persist_stage3(void) { run(persist_stage3_cases, persist_stage
 void kernel_tests_persist_clean(void) { run(persist_clean_cases, persist_clean_count); }
 void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
+void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1121,7 +1122,8 @@ void kernel_tests_all(void) {
         sizeof(shell_cases)/sizeof(shell_cases[0]),
         storage_case_count,
         ultriumfs_case_count,
-        ufs2_journal_case_count
+        ufs2_journal_case_count,
+        ufs2_fs_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

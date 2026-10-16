@@ -67,9 +67,15 @@ void ufs2_uuid_make(uint8_t out[16], const struct block_device *device);
 /* Destructive: writable, unmounted, scratch-flagged device only. `uuid` may be
    NULL (a unique, non-random one is derived). */
 enum vfs_error ufs2_core_format(struct block_device *device, const char *label, const uint8_t *uuid);
+enum vfs_error ufs2_core_format_with(struct block_device *device, const char *label, const uint8_t *uuid,
+                                     enum vfs_error (*populate)(struct ufs2_core *, void *), void *context);
 /* Open: select the superblock, replay the journal (writable opens only). A
    read-only open of a volume needing recovery fails with VFS_RECOVERY. */
 enum vfs_error ufs2_core_open(struct ufs2_core *core, struct block_device *device, bool want_write);
+/* As ufs2_core_open, but a writable open does not mark the volume mounted until
+   ufs2_core_mark_mounted() (so a failed verification leaves the state untouched). */
+enum vfs_error ufs2_core_open_ex(struct ufs2_core *core, struct block_device *device, bool want_write, bool mark_mounted);
+enum vfs_error ufs2_core_mark_mounted(struct ufs2_core *core);
 enum vfs_error ufs2_core_close(struct ufs2_core *core);
 
 /* Metadata transactions. Blocks modified inside a transaction become durable
