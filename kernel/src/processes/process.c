@@ -6,6 +6,7 @@
 #include "memory/aspace.h"
 #include "memory/vmm.h"
 #include "system/exceptions.h"
+#include "abi/ultrium_syscall.h"
 
 struct process {
     enum process_state state;
@@ -19,6 +20,9 @@ struct process {
     bool faulted, reaped;
     struct process_fault fault;
     struct task *waiter;
+    struct { struct vfs_file file; uint32_t rights; bool used; } fds[ULTRIUM_FD_MAX];
+    char console[PROCESS_CONSOLE_MAX];
+    uint32_t console_length;
 };
 
 static struct process table[PROCESS_MAX];
@@ -63,6 +67,52 @@ struct process *process_find(uint32_t pid) {
 }
 struct process *process_current(void) { return task_current()->process; }
 uint32_t process_current_pid(void) { struct process *p = process_current(); return p ? p->pid : 0; }
+static void release_files(struct process *p) {
+    for (unsigned i = 0; i < ULTRIUM_FD_MAX; ++i) {
+        if (!p->fds[i].used) continue;
+        (void)vfs_file_close(&p->fds[i].file);
+        p->fds[i].used = false;
+    }
+}
+int process_fd_open(struct process *p, const struct vfs_file *file, uint32_t rights) {
+    if (!p || !file) return -1;
+    for (unsigned i = 3; i < ULTRIUM_FD_MAX; ++i) {
+        if (p->fds[i].used) continue;
+        p->fds[i].file = *file; p->fds[i].rights = rights; p->fds[i].used = true;
+        return (int)i;
+    }
+    return -1;
+}
+struct vfs_file *process_fd_file(struct process *p, int fd, uint32_t need_rights) {
+    if (!p || fd < 3 || fd >= (int)ULTRIUM_FD_MAX || !p->fds[fd].used || (p->fds[fd].rights & need_rights) != need_rights) return NULL;
+    return &p->fds[fd].file;
+}
+bool process_fd_close(struct process *p, int fd) {
+    if (!p || fd < 3 || fd >= (int)ULTRIUM_FD_MAX || !p->fds[fd].used) return false;
+    enum vfs_error e = vfs_file_close(&p->fds[fd].file);
+    p->fds[fd].used = false;                         /* the descriptor is gone even if the filesystem reported an error */
+    return e == VFS_OK;
+}
+unsigned process_fd_count(const struct process *p) {
+    unsigned n = 0;
+    if (p) for (unsigned i = 3; i < ULTRIUM_FD_MAX; ++i) if (p->fds[i].used) ++n;
+    return n;
+}
+struct aspace *process_aspace_of(struct process *p) { return p ? p->aspace : NULL; }
+uint32_t process_pid_of(const struct process *p) { return p ? p->pid : 0; }
+unsigned process_console_peek(uint32_t pid, char *out, size_t capacity) {
+    struct process *p = process_find(pid);
+    if (!p || !out || !capacity) return 0;
+    size_t n = p->console_length < capacity - 1 ? p->console_length : capacity - 1;
+    for (size_t i = 0; i < n; ++i) out[i] = p->console[i];
+    out[n] = 0;
+    return (unsigned)n;
+}
+void process_console_append(struct process *p, const char *data, size_t length) {
+    if (!p) return;
+    for (size_t i = 0; i < length && p->console_length + 1 < PROCESS_CONSOLE_MAX; ++i) p->console[p->console_length++] = data[i];
+    p->console[p->console_length] = 0;
+}
 struct aspace *process_aspace(uint32_t pid) { struct process *p = process_find(pid); return p ? p->aspace : NULL; }
 unsigned process_count_live(void) {
     unsigned n = 0;
@@ -174,6 +224,7 @@ static void finish_slot(struct process *p) {
 bool process_discard(uint32_t pid) {
     struct process *p = process_find(pid);
     if (!p || p->state != PROC_CREATED) return false;
+    release_files(p);
     uint64_t f = irq_off();
     struct task *t = p->task;
     if (t) {
@@ -193,6 +244,7 @@ __attribute__((noreturn)) void process_exit_current(int64_t status) {
     if (p) {
         p->exit_status = status;
         p->state = PROC_EXITED;
+        release_files(p);                                     /* an exited process holds no open files */
         if (p->waiter) { struct task *w = p->waiter; p->waiter = NULL; (void)sched_wake(w); }
     }
     sched_exit();
@@ -207,6 +259,7 @@ bool process_kill(uint32_t pid) {
     if (p->state == PROC_ACTIVE && p->task && sched_terminate(p->task)) {
         p->exit_status = PROCESS_EXIT_KILLED;
         p->state = PROC_EXITED;
+        release_files(p);
         if (p->waiter) { struct task *w = p->waiter; p->waiter = NULL; (void)sched_wake(w); }
         ok = true;
     }
@@ -214,12 +267,19 @@ bool process_kill(uint32_t pid) {
     return ok;
 }
 
+static char *collect_console;
+static size_t collect_console_cap;
 bool process_collect(uint32_t pid, int64_t *status) {
     struct process *p = process_find(pid);
     if (!p || p->state != PROC_EXITED) return false;
     for (unsigned guard = 0; !p->reaped && guard < 64; ++guard) sched_yield();   /* let the reaper release the address space */
     if (!p->reaped) return false;
     if (status) *status = p->exit_status;
+    if (collect_console && collect_console_cap) {
+        size_t n = p->console_length < collect_console_cap - 1 ? p->console_length : collect_console_cap - 1;
+        for (size_t i = 0; i < n; ++i) collect_console[i] = p->console[i];
+        collect_console[n] = 0;
+    }
     uint64_t f = irq_off();
     finish_slot(p);
     irq_back(f);
@@ -239,6 +299,14 @@ bool process_wait(uint32_t pid, int64_t *status) {
     p->waiter = NULL;
     irq_back(f);
     return process_collect(pid, status);
+}
+
+bool process_wait_ex(uint32_t pid, int64_t *status, char *console, size_t capacity) {
+    collect_console = console; collect_console_cap = capacity;
+    if (console && capacity) console[0] = 0;
+    bool ok = process_wait(pid, status);
+    collect_console = NULL; collect_console_cap = 0;
+    return ok;
 }
 
 bool process_info_get(uint32_t pid, struct process_info *info) {

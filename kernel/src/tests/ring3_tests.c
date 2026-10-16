@@ -111,7 +111,7 @@ static const char *basic(void) {
     REQUIRE(!e && st == 9, "timer interrupts with DF and AC set by ring 3 failed");
     e = run_to_exit("badsys", P_BADSYS, sizeof(P_BADSYS), &st, NULL);
     REQUIRE(!e, e);
-    REQUIRE(st == -38, "an unknown system call did not return -38 and let the program continue");
+    REQUIRE(st == -1, "an unknown system call did not return -ULTRIUM_E_NOSYS and let the program continue");
     REQUIRE(process_count_live() == 0 && task_by_tid(1) != NULL, "process table not empty");
     REQUIRE(pmm_free_pages() == frames && heap_live_allocations() == live, "ring-3 programs leaked memory");
     return 0;
