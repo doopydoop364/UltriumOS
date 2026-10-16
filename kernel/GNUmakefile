@@ -425,6 +425,13 @@ bin-$(ARCH)/$(OUTPUT): GNUmakefile linker-scripts/$(ARCH).lds $(OBJ)
 # runtime that LTO does not account for, so never build those with LTO.
 obj-$(ARCH)/src/memory.c.o obj-$(ARCH)/cc-runtime/src/cc-runtime.c.o: override CFLAGS += -fno-lto
 
+# Native Ultrium programs (os/) are built first and embedded into the kernel image by
+# src/processes/programs.c, which installs them into the root filesystem at boot.
+.PHONY: user-programs
+user-programs:
+	$(MAKE) -C ../os TOOLCHAIN=$(TOOLCHAIN)
+obj-$(ARCH)/src/processes/programs.c.o: $(wildcard ../os/bin/*.elf) | user-programs
+
 # Compilation rules for *.c files.
 obj-$(ARCH)/%.c.o: %.c GNUmakefile
 	mkdir -p "$(dir $@)"

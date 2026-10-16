@@ -117,7 +117,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | Ring 3 execution | `feature/ring3` | **implemented, QEMU-tested** (`processes/process.c`, `ultrium test ring3`, 6 cases): GDT with ring-3 code/data (0x23/0x1b) and TSS at 0x28, `iretq` entry, per-task `CR3` and eager FXSAVE switching, `int 0x80` gate (DPL 3) with only `exit`/`yield`, user faults end only the faulting process (exit status `-1000 - vector`), `EFER.SCE` cleared so `SYSCALL` raises #UD. Programs are hand-assembled images; no loader yet |
 | System calls | `feature/syscalls` | **implemented, QEMU-tested** (`docs/syscall-abi.md`, `shared/abi/ultrium_syscall.h`, `ultrium test syscalls`, 4 cases): `int 0x80`, 11 calls incl. VFS-backed open/read/write/close, validated all-or-nothing user buffers, per-process descriptors released at exit |
 | ELF64 loader | `feature/elf-loader` | **implemented, QEMU-tested** (`docs/elf-loader.md`, `ultrium test elf`, 6 cases): static `ET_EXEC` x86-64 only, 55 header/segment mutations, 4000-image fuzz, loading from the VFS |
-| Userspace runtime and programs | `feature/userspace-runtime` | not started |
+| Userspace runtime and programs | `feature/userspace-runtime` | **implemented, QEMU-tested** (`os/`, `docs/userspace-runtime.md`, `ultrium test programs`, 6 cases): hello, counter, filedemo, fpudemo run in ring 3 concurrently, loaded from `/bin` through the VFS |
 | Shell process commands | `feature/process-shell` | not started |
 | Integration tests | `feature/process-integration` | not started |
 

@@ -66,6 +66,7 @@ static void hcf(void) {
 #include "scheduler/task.h"
 #include "scheduler/scheduler.h"
 #include "processes/process.h"
+#include "processes/programs.h"
 #include "syscalls/syscall.h"
 #include "fs/vfs.h"
 #include "system/exceptions.h"
@@ -121,6 +122,7 @@ void kmain(void) {
         hcf();
     }
     terminal_write("RAM FILESYSTEM READY\n");
+    terminal_write(programs_install() ? "NATIVE PROGRAMS INSTALLED IN /bin\n" : "NATIVE PROGRAM INSTALL FAILED\n");
     storage_register_power_hook();
     pci_init();
     size_t block_devices = virtio_blk_probe();

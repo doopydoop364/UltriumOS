@@ -4,6 +4,7 @@
 #include "tests.h"
 #include "tests_internal.h"
 #include "scheduler/task.h"
+#include "processes/programs.h"
 #include "terminal/terminal.h"
 #include "memory/pmm.h"
 #include "memory/heap.h"
@@ -862,7 +863,13 @@ static const char *filesystem_capacity(void) {
         if (result == VFS_NO_SPACE) break;
         FS_REQUIRE(result == VFS_OK, "capacity copy returned unexpected error");
     }
-    FS_REQUIRE(copies == VFS_DATA_MAX / VFS_FILE_MAX - 1, "data capacity not enforced");
+    /* The installed native programs (/bin) hold their own data blocks and nodes; the limits are otherwise exact. */
+    unsigned program_blocks = 0, program_nodes = 1;
+    for (unsigned i = 0; i < programs_count(); ++i) {
+        const uint8_t *image; size_t size;
+        if (programs_image(i, &image, &size)) { program_blocks += (unsigned)((size + VFS_FILE_MAX - 1) / VFS_FILE_MAX); ++program_nodes; }
+    }
+    FS_REQUIRE(copies == VFS_DATA_MAX / VFS_FILE_MAX - 1 - program_blocks, "data capacity not enforced");
     FS_REQUIRE(vfs_remove_tree("/fs-limits", &report) == VFS_OK &&
         vfs_create_directory("/fs-limits") == VFS_OK, "capacity reset failed");
     unsigned nodes = 0;
@@ -873,7 +880,7 @@ static const char *filesystem_capacity(void) {
         if (result == VFS_NO_SPACE) break;
         FS_REQUIRE(result == VFS_OK, "node capacity unexpected error");
     }
-    FS_REQUIRE(nodes == VFS_NODE_MAX - 2, "node capacity not enforced");
+    FS_REQUIRE(nodes == VFS_NODE_MAX - 2 - program_nodes, "node capacity not enforced");
 cleanup:
     if (file.generation) vfs_file_close(&file);
     if (vfs_remove_tree("/fs-limits", &report) != VFS_OK && !reason) reason = "capacity cleanup failed";
@@ -1126,6 +1133,7 @@ void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoin
 void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
 void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
 void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
+void kernel_tests_programs(void) { run(program_cases, program_case_count); }
 void kernel_tests_elf(void) { run(elf_cases, elf_case_count); }
 void kernel_tests_syscalls(void) { run(syscall_cases, syscall_case_count); }
 void kernel_tests_ring3(void) { run(ring3_cases, ring3_case_count); }
@@ -1141,7 +1149,7 @@ void kernel_tests_ufs2crash(void) {
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases, program_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1156,7 +1164,8 @@ void kernel_tests_all(void) {
         aspace_case_count,
         ring3_case_count,
         syscall_case_count,
-        elf_case_count
+        elf_case_count,
+        program_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

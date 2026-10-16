@@ -17,6 +17,7 @@ void kernel_tests_aspace(void);
 void kernel_tests_ring3(void);
 void kernel_tests_syscalls(void);
 void kernel_tests_elf(void);
+void kernel_tests_programs(void);
 void kernel_tests_persist_v2_big(void);
 void kernel_tests_persist_v2_bigverify(void);
 void kernel_tests_persist_v2_cut_dataflush(void);
