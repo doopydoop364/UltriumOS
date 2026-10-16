@@ -659,6 +659,7 @@ static enum vfs_error ufs2_file_write(struct vfs_file *f, const void *buffer, si
         if (!nbytes) { fs_abort(); e = VFS_NO_SPACE; break; }
         /* Write the data. The tail block (already allocated) is updated in place; new blocks are zero-filled. */
         size_t written = 0;
+        block_set_phase("data-write");
         if (tail_space) {
             uint32_t within = UFS2_BLOCK - tail_space, phys, run;
             size_t chunk = tail_space < nbytes ? tail_space : nbytes;

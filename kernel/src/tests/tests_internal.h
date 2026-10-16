@@ -6,6 +6,8 @@
 typedef const char *(*test_fn)(void);
 struct test_case { const char *name; test_fn run; };
 
+void tests_serial_text(const char *text);
+void tests_serial_number(uint64_t value);
 extern const struct test_case storage_cases[];
 extern const size_t storage_case_count;
 extern const struct test_case ultriumfs_cases[];
@@ -14,6 +16,19 @@ extern const struct test_case ufs2_journal_cases[];
 extern const size_t ufs2_journal_case_count;
 extern const struct test_case ufs2_fs_cases[];
 extern const size_t ufs2_fs_case_count;
+extern const struct test_case ufs2_crash_cases[];
+extern const size_t ufs2_crash_case_count;
+unsigned long ufs2_crash_total_runs(void);
+extern const struct test_case persist_v2_big_cases[1];
+extern const struct test_case persist_v2_bigverify_cases[1];
+extern const struct test_case persist_v2_cut_dataflush_cases[1];
+extern const struct test_case persist_v2_cut_journal_cases[1];
+extern const struct test_case persist_v2_cut_commit_cases[1];
+extern const struct test_case persist_v2_cut_home_cases[1];
+extern const struct test_case persist_v2_cut_checkpoint_cases[1];
+extern const struct test_case persist_v2_recovered_cases[1];
+extern const struct test_case persist_v2_stream_cases[1];
+extern const struct test_case persist_v2_streamverify_cases[1];
 extern const struct test_case storage_disk_cases[];
 extern const size_t storage_disk_case_count;
 extern const struct test_case persist_blank_cases[], persist_populate_cases[], persist_stage1_cases[],
