@@ -6,6 +6,9 @@
 #include "storage/storage_ops.h"
 #include "storage/block.h"
 #include "memory.h"
+#include "processes/elf.h"
+#include "processes/process.h"
+#include "processes/programs.h"
 
 /* Commands for the UltriumFS 2 recovery QEMU test (tools/qemu-ufs2-recovery-test.py), run against the
    volume mounted at /volumes/disk. `big` builds a larger fixture (file over 4 MiB, fragmented file,
@@ -153,3 +156,48 @@ const struct test_case persist_v2_cut_checkpoint_cases[] = {{"v2: power cut afte
 const struct test_case persist_v2_recovered_cases[] = {{"v2: interrupted session recovered read-write", v2_recovered}};
 const struct test_case persist_v2_stream_cases[] = {{"v2: stream a 40 MiB file", v2_stream}};
 const struct test_case persist_v2_streamverify_cases[] = {{"v2: interrupted stream is a valid prefix", v2_streamverify}};
+
+/* ---- userspace programs working on the mounted volume ---- */
+static const char *program_status(const char *path, int64_t *status) {
+    enum elf_error e;
+    uint32_t pid = elf_spawn_file(path, 0, &e);
+    REQUIRE(pid, "launching the program failed");
+    REQUIRE(process_wait(pid, status), "waiting for the program failed");
+    return 0;
+}
+static const char *v2_program_write(void) {
+    const char *r = mounted_volume();
+    if (r) return r;
+    int64_t st = -1;
+    r = program_status("/bin/filedemo", &st);
+    if (r) return r;
+    REQUIRE(st == 0, "filedemo failed");
+    struct vfs_info info;
+    REQUIRE(vfs_stat(MP "/filedemo.txt", &info) == VFS_OK && info.persistent && info.size == 42, "the userspace file is not on the persistent volume");
+    return 0;
+}
+static const char *v2_program_read(void) {
+    const char *r = mounted_volume();
+    if (r) return r;
+    REQUIRE(programs_install_set(true, true), "cannot install the test programs");
+    int64_t st = -1;
+    r = program_status("/bin/filecheck", &st);
+    if (!r) { int64_t st2 = -1; r = program_status("/bin/badcalls", &st2); if (!r && st2 != 0) r = "badcalls misbehaved on a persistent volume"; }
+    (void)programs_install_set(true, false);
+    if (r) return r;
+    REQUIRE(st == 0, "the persistent file written by userspace is missing or wrong");
+    return 0;
+}
+static const char *v2_program_spam(void) {
+    const char *r = mounted_volume();
+    if (r) return r;
+    REQUIRE(programs_install_set(true, true), "cannot install the test programs");
+    enum elf_error e;
+    uint32_t pid = elf_spawn_file("/bin/diskwriter", 0, &e);       /* left running: the host stops QEMU while it writes */
+    (void)programs_install_set(true, false);
+    REQUIRE(pid, "launching the disk writer failed");
+    return 0;
+}
+const struct test_case persist_v2_program_write_cases[1] = {{"v2: a userspace program writes a file on the persistent volume", v2_program_write}};
+const struct test_case persist_v2_program_read_cases[1] = {{"v2: userspace programs read it back and survive hostile calls", v2_program_read}};
+const struct test_case persist_v2_program_spam_cases[1] = {{"v2: start a userspace disk writer and leave it running", v2_program_spam}};

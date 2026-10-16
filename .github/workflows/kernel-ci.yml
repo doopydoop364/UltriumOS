@@ -71,3 +71,6 @@ jobs:
         run: |
           python3 tools/qemu-ufs2-recovery-test.py
           python3 tools/ufs2-host-negative-controls.py
+
+      - name: Run userspace programs on a persistent virtio disk with independent host verification
+        run: python3 tools/qemu-process-test.py

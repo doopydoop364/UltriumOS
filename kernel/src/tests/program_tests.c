@@ -51,6 +51,14 @@ static const char *installed(void) {
     REQUIRE(programs_count() >= 4, "programs missing");
     for (unsigned i = 0; i < programs_count(); ++i) {
         const uint8_t *image; size_t size;
+        if (programs_is_test_only(i)) {            /* test programs are valid executables but are not installed at boot */
+            struct elf_plan p2;
+            REQUIRE(programs_image(i, &image, &size) && elf_parse(image, size, &p2) == ELF_OK && size <= 4096, "a test program is not a valid small executable");
+            char tp[40] = "/bin/"; size_t k = 5; for (const char *q = programs_name(i); *q; ++q) tp[k++] = *q; tp[k] = 0;
+            struct vfs_info ti;
+            REQUIRE(vfs_stat(tp, &ti) == VFS_NOT_FOUND, "a test program is installed at boot");
+            continue;
+        }
         REQUIRE(programs_image(i, &image, &size), "embedded image missing");
         struct elf_plan plan;
         REQUIRE(elf_parse(image, size, &plan) == ELF_OK, "an embedded program is not a valid executable");

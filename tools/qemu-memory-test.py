@@ -24,7 +24,8 @@ def main():
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 8,
-        "ultrium test all": 151,
+        "ultrium test all": 155,
+        "ultrium test integration": 4,
         "ultrium test processshell": 5,
         "ultrium test programs": 6,
         "ultrium test elf": 6,
@@ -43,7 +44,7 @@ def main():
     if not keyboard_regression and not shell_regression and not process_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
             "ultrium test filesystem", "ultrium test shell",
-            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf", "ultrium test programs", "ultrium test processshell",
+            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf", "ultrium test programs", "ultrium test processshell", "ultrium test integration",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:

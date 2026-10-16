@@ -1,6 +1,6 @@
 # Ultrium process and thread model
 
-Status: **specification (this PR is documentation only)**. Nothing described here is implemented yet. Each later PR in the stack states which parts it implements and updates the "Implementation status" table at the end of this file. Do not describe a row as working until its PR says so.
+Status: **specification plus the implementation status table at the end**. Rows marked implemented were built and QEMU-tested in the stacked PRs listed there; everything else in this file is design. Do not describe a row as working unless the table says so.
 
 Scope: single CPU, ring 0 and ring 3, one thread per process initially. The design leaves room for several threads per process and several CPUs without requiring either now. See [component-architecture.md](component-architecture.md) for the Kernel / OS / GUI split: processes, the scheduler and system calls belong to the **Kernel**; programs and the runtime belong to **OS**.
 
@@ -119,7 +119,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | ELF64 loader | `feature/elf-loader` | **implemented, QEMU-tested** (`docs/elf-loader.md`, `ultrium test elf`, 6 cases): static `ET_EXEC` x86-64 only, 55 header/segment mutations, 4000-image fuzz, loading from the VFS |
 | Userspace runtime and programs | `feature/userspace-runtime` | **implemented, QEMU-tested** (`os/`, `docs/userspace-runtime.md`, `ultrium test programs`, 6 cases): hello, counter, filedemo, fpudemo run in ring 3 concurrently, loaded from `/bin` through the VFS |
 | Shell process commands | `feature/process-shell` | **implemented, QEMU-tested** (USH 0.6: `run [-b]`, `jobs`, `terminate`, `ultrium system processes`; `ultrium test processshell` 5 cases + `--process-regression` through real PS/2 events incl. Ctrl+C). `docs/ultrium-shell.md` |
-| Integration tests | `feature/process-integration` | not started |
+| Integration tests | `feature/process-integration` | **implemented, QEMU-tested** (`ultrium test integration`, 4 cases; `tools/qemu-process-test.py`): kernel tasks + eight user programs together incl. a fault and a kill inside a syscall, process/task exhaustion, userspace file I/O on UltriumFS 2 (memory-backed and virtio), shutdown with live processes, abrupt stop during userspace file writes, host-verified |
 
 ## Ring 3 facts verified by test
 

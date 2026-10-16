@@ -6,8 +6,8 @@ Status: **architecture and migration plan, plus ownership rules**. No code has b
 
 | Component | Scope | Today |
 | --- | --- | --- |
-| **Ultrium Kernel** | Boot handoff, CPU/GDT/IDT/exceptions, PMM/heap/VMM, interrupts and timer, drivers, block devices, scheduling and system-call infrastructure | PMM, heap, VMM, exceptions, APIC timer, PS/2 and ACPI power exist. No scheduler, no syscalls, no userspace |
-| **Ultrium OS** | Ultrium Shell (USH), system services, configuration, permissions, applications, AI integration | USH, command registry and the CLI tests live in `kernel/src/` as kernel code. VFS/RAMFS is kernel-resident. Permissions (`auth`/`as`) and AI are unavailable by design |
+| **Ultrium Kernel** | Boot handoff, CPU/GDT/IDT/exceptions, PMM/heap/VMM, interrupts and timer, drivers, block devices, scheduling and system-call infrastructure | PMM, heap, VMM, exceptions, APIC timer, PS/2 and ACPI power exist. Since 0.7.0: scheduler, per-process address spaces, ring 3, syscall ABI 1.0, ELF loader (single CPU, no SMP, kernel not preemptible) |
+| **Ultrium OS** | Ultrium Shell (USH), system services, configuration, permissions, applications, AI integration | USH, command registry and the CLI tests live in `kernel/src/` as kernel code; sample programs and the runtime live in `os/` and run in ring 3. VFS/RAMFS is kernel-resident. Permissions (`auth`/`as`) and AI are unavailable by design |
 | **Ultrium GUI** | Optional desktop, compositor, window management, themes, graphical apps | Not started. The CLI must remain fully useful without it |
 
 Dependency direction is strictly downward: GUI depends on OS, OS depends on Kernel, never the reverse. The kernel must boot and be useful with neither above it.
@@ -23,9 +23,9 @@ Dependency direction is strictly downward: GUI depends on OS, OS depends on Kern
 
 ```text
 kernel/   Ultrium Kernel   -> /boot/kernel   (exists)
-os/       Ultrium OS       -> userspace images, once processes exist (not created)
+os/       Ultrium OS       -> userspace runtime and programs (exists; embedded into the kernel image and installed in /bin)
 gui/      Ultrium GUI      -> optional image (not created)
-shared/   ABI/protocol headers, only when needed (not created)
+shared/   ABI/protocol headers (shared/abi/ultrium_syscall.h exists: kernel and userspace both consume it)
 ```
 
 Each component gets its own makefile and tests; the root `GNUmakefile` composes the ISO. Until userspace exists, `os/` cannot be built separately from the kernel image, so creating the directory now would only imply a separation that does not hold. The existing build (`make TOOLCHAIN=llvm`, `limine.conf`, `/boot/kernel`) is unchanged by this document.
