@@ -192,6 +192,7 @@ static const struct ush_command registry[] = {
     B("aspace","ultrium test","User address-space tests",kernel_tests_aspace),
     B("ring3","ultrium test","Ring-3 execution, faults and isolation tests",kernel_tests_ring3),
     B("syscalls","ultrium test","System-call interface tests",kernel_tests_syscalls),
+    B("elf","ultrium test","ELF64 loader tests",kernel_tests_elf),
     B("ufs2fs","ultrium test","UltriumFS 2 filesystem tests",kernel_tests_ufs2fs),
     B("ufs2crash","ultrium test","UltriumFS 2 recovery matrix (power cut at every I/O event; slow, not in 'all')",kernel_tests_ufs2crash),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),

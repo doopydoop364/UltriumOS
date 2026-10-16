@@ -116,7 +116,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | Per-process address spaces | `feature/user-address-spaces` | **implemented, QEMU-tested** (`memory/aspace.c`, `ultrium test aspace`, 9 cases): private PML4, shared kernel half with the User bit cleared, W^X, bounded mappings with rollback, software-walk validated copies, frame limit, destroy-while-active. No ring 3 code runs yet. SMEP/SMAP are enabled only if the CPU reports them (QEMU's default CPU model does not) |
 | Ring 3 execution | `feature/ring3` | **implemented, QEMU-tested** (`processes/process.c`, `ultrium test ring3`, 6 cases): GDT with ring-3 code/data (0x23/0x1b) and TSS at 0x28, `iretq` entry, per-task `CR3` and eager FXSAVE switching, `int 0x80` gate (DPL 3) with only `exit`/`yield`, user faults end only the faulting process (exit status `-1000 - vector`), `EFER.SCE` cleared so `SYSCALL` raises #UD. Programs are hand-assembled images; no loader yet |
 | System calls | `feature/syscalls` | **implemented, QEMU-tested** (`docs/syscall-abi.md`, `shared/abi/ultrium_syscall.h`, `ultrium test syscalls`, 4 cases): `int 0x80`, 11 calls incl. VFS-backed open/read/write/close, validated all-or-nothing user buffers, per-process descriptors released at exit |
-| ELF64 loader | `feature/elf-loader` | not started |
+| ELF64 loader | `feature/elf-loader` | **implemented, QEMU-tested** (`docs/elf-loader.md`, `ultrium test elf`, 6 cases): static `ET_EXEC` x86-64 only, 55 header/segment mutations, 4000-image fuzz, loading from the VFS |
 | Userspace runtime and programs | `feature/userspace-runtime` | not started |
 | Shell process commands | `feature/process-shell` | not started |
 | Integration tests | `feature/process-integration` | not started |

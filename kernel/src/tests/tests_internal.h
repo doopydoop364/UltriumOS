@@ -29,6 +29,8 @@ extern const struct test_case persist_v2_cut_checkpoint_cases[1];
 extern const struct test_case persist_v2_recovered_cases[1];
 extern const struct test_case persist_v2_stream_cases[1];
 extern const struct test_case persist_v2_streamverify_cases[1];
+extern const struct test_case elf_cases[];
+extern const size_t elf_case_count;
 extern const struct test_case syscall_cases[];
 extern const size_t syscall_case_count;
 extern const struct test_case ring3_cases[];
