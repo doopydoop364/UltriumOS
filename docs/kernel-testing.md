@@ -61,3 +61,7 @@ To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` t
 `python3 tools/qemu-storage-test.py --diskless|--disk|--disk-4k|--disk-readonly` exercises the block layer and virtio-blk driver; see `docs/block-devices.md`.
 
 `ultrium test ultriumfs` runs the 20 UltriumFS and VFS-mount cases on memory-backed devices; see `docs/ultriumfs-format.md`.
+
+## Persistence
+
+`python3 tools/qemu-persistence-test.py` runs five QEMU boots on one disposable image; see `docs/persistence-testing.md`. The `ultrium test persist ...` commands it uses need a mounted scratch volume and are not part of `ultrium test all`.
