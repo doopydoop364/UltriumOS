@@ -8,6 +8,8 @@ struct test_case { const char *name; test_fn run; };
 
 extern const struct test_case storage_cases[];
 extern const size_t storage_case_count;
+extern const struct test_case ultriumfs_cases[];
+extern const size_t ultriumfs_case_count;
 extern const struct test_case storage_disk_cases[];
 extern const size_t storage_disk_case_count;
 #endif

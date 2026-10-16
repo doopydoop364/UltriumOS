@@ -70,8 +70,15 @@ static bool in_registry(const struct block_device *d) {
     for (size_t i = 0; i < BLOCK_MAX_DEVICES; ++i) if (registry[i] == d) return true;
     return false;
 }
+bool block_claim(struct block_device *d) {
+    if (!d || !d->registered || !in_registry(d) || (d->flags & BLOCK_FLAG_DEAD) || d->holders == UINT32_MAX) return false;
+    ++d->holders;
+    return true;
+}
+void block_release(struct block_device *d) { if (d && d->holders) --d->holders; }
+
 bool block_unregister(struct block_device *d) {
-    if (!d || !d->registered) return false;
+    if (!d || !d->registered || d->holders) return false;
     for (size_t i = 0; i < BLOCK_MAX_DEVICES; ++i) {
         if (registry[i] && registry[i]->parent == d) return false;  /* windows still reference it */
     }
