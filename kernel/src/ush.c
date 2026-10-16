@@ -72,6 +72,11 @@ static enum ush_result failure(enum vfs_error error) {
         case VFS_NO_SPACE: terminal_write("out of memory or capacity\n"); break;
         case VFS_NOT_EMPTY: terminal_write("folder is not empty; use -r to recurse\n"); break;
         case VFS_INVALID_PATH: terminal_write("invalid path\n"); break;
+        case VFS_READ_ONLY: terminal_write("read-only volume\n"); break;
+        case VFS_IO: terminal_write("storage I/O error\n"); break;
+        case VFS_CORRUPT: terminal_write("on-disk structure is corrupt\n"); break;
+        case VFS_BUSY: terminal_write("busy (open files, mount point, or shutting down)\n"); break;
+        case VFS_DENIED: terminal_write("not permitted\n"); break;
         default: terminal_write("unsupported or busy operation\n"); break;
     }
     return USH_FS_ERROR;

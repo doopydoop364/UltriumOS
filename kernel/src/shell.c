@@ -164,6 +164,7 @@ static const struct ush_command registry[] = {
     B("storage","ultrium test","Block-device tests (memory-backed)",kernel_tests_storage),
     G("disk","ultrium test storage","Scratch virtio disk tests (writes to a scratch disk only)"),
     B("run","ultrium test storage disk","Run virtio disk tests",kernel_tests_storage_disk),
+    B("ultriumfs","ultrium test","UltriumFS tests (memory-backed devices)",kernel_tests_ultriumfs),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
     B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
     B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),

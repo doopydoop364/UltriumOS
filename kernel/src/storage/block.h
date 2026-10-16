@@ -54,6 +54,7 @@ struct block_device {
     uint64_t parent_first;
     /* Statistics and test hooks. */
     uint64_t reads, writes, flushes, errors;
+    uint32_t holders;   /* filesystems or windows using the device */
     bool registered;
 };
 
@@ -65,6 +66,11 @@ bool block_unregister(struct block_device *device);
    partitions or restricted views. It inherits the parent's flags. */
 bool block_register_window(struct block_device *window, struct block_device *parent,
                            const char *name, uint64_t first, uint64_t count);
+
+/* A filesystem claims its device while mounted; claimed devices cannot be
+   unregistered or destroyed. */
+bool block_claim(struct block_device *device);
+void block_release(struct block_device *device);
 
 size_t block_count_devices(void);
 struct block_device *block_device_at(size_t index);
