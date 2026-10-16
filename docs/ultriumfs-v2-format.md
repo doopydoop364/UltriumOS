@@ -92,7 +92,7 @@ Copies are written **alternately ("ping-pong")**, never both at once. An update 
 **Selection at mount** (`superblock_select`): read A (block 0) and B (block `min(device_blocks/per, 2^20) - 1`). A copy is *valid* if its magic, version, block size and checksum are correct and its geometry passes the sanity checks of section 11. Then:
 
 1. Both valid: they **must agree on every static field** (everything except generation, state, journal_tail_seq, journal_tail_pos and the checksum); disagreement is corruption and refuses the mount. Select the **higher generation**. Equal generations with different contents are corruption.
-2. One valid: select it. The mount may proceed read-write; the first superblock update naturally overwrites the damaged copy. The condition is reported, and `check --repair` rewrites the damaged copy from the valid one (provably safe because the valid copy is self-checking and current).
+2. One valid: select it. The core layer tolerates this and its first superblock update overwrites the damaged copy; the **filesystem mount** treats it as a repairable finding and mounts read-only until `check --repair` rewrites the damaged copy from the valid one (provably safe because the valid copy is self-checking and current).
 3. Neither valid: the volume is unmountable and unrepairable by this format (no third copy exists). The checker reports "both superblock copies damaged" and changes nothing.
 
 For a copy B that is valid but has the *lower* generation, mount treats it as the stale copy: it is not an error (the normal state after every update is that the two copies differ by one generation).

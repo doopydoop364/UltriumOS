@@ -1,5 +1,7 @@
 # Persistence testing
 
+The default test now exercises **UltriumFS 2** and checks every image with the independent v2 host reader (`tools/ufs2_image.py`): superblock pair, empty journal, extents, directories, bitmap and checksums, in addition to content. `python3 tools/qemu-persistence-test.py --v1` is the UltriumFS 1 compatibility run (mounted read-only, data readable, writes refused, image byte-identical). The older `tools/ufs_image.py` reads v1 images.
+
 The defining test: files written in one boot are read back in the next, from a disposable virtual disk, across real QEMU shutdowns.
 
 ```sh

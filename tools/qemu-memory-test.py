@@ -23,10 +23,10 @@ def main():
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 8,
-        "ultrium test all": 95,
+        "ultrium test all": 103,
         "ultrium test ultriumfs": 20,
         "ultrium test ufs2": 16,
-        "ultrium test ufs2fs": 21,
+        "ultrium test ufs2fs": 29,
         "ultrium test storage": 7,
         "ultrium test shell": 7,
     }.get(command_text)

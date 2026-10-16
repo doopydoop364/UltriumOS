@@ -173,6 +173,8 @@ static const struct ush_command registry[] = {
     B("stage3","ultrium test persist","Verify the boot-two changes",kernel_tests_persist_stage3),
     B("clean","ultrium test persist","Previous session ended cleanly",kernel_tests_persist_clean),
     B("unclean","ultrium test persist","Abrupt stop is reported",kernel_tests_persist_unclean),
+    B("v1fixture","ultrium test persist","Build an UltriumFS 1 volume (explicit v1 format)",kernel_tests_persist_v1fixture),
+    B("v1verify","ultrium test persist","Verify a v1 volume mounted read-only",kernel_tests_persist_v1verify),
     B("ufs2","ultrium test","UltriumFS 2 journal and crash-recovery tests",kernel_tests_ufs2),
     B("ufs2fs","ultrium test","UltriumFS 2 filesystem tests",kernel_tests_ufs2fs),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
@@ -186,6 +188,7 @@ static const struct ush_command registry[] = {
     N("mount","ultrium storage","Mount an UltriumFS device on an empty folder","<device> <path> [-r|--read-only]","storage mount",2,3),
     N("unmount","ultrium storage","Synchronize and unmount a volume","<path>","storage unmount",1,1),
     N("sync","ultrium storage","Flush all mounted persistent volumes","","storage sync",0,0),
+    N("check","ultrium storage","Verify an UltriumFS 2 volume; --repair applies conservative repairs","<device> [--repair]","storage check",1,2),
     N("info","ultrium storage","Show filesystem, space and mode for a path","<path>","storage info",1,1),
     G("ai","ultrium","AI namespace; services unavailable"),
     B("status","ultrium ai","Report service availability",ai_status),
@@ -235,7 +238,7 @@ bool ush_registry_valid(void) {
         if (!c->name[0] || c->minimum > c->maximum || (c->operation && c->builtin)) return false;
         if (c->operation) {
             const char *operations[] = {"list","go","where","new file","new folder","view","write","remove","info","copy","move","rename",
-                "storage volumes","storage format","storage mount","storage unmount","storage sync","storage info"};
+                "storage volumes","storage format","storage mount","storage unmount","storage sync","storage info","storage check"};
             bool known = false;
             for (size_t j = 0; j < sizeof(operations)/sizeof(operations[0]); ++j)
                 if (same(c->operation, operations[j])) known = true;

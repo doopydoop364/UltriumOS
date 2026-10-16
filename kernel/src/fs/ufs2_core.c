@@ -352,7 +352,13 @@ enum vfs_error ufs2_core_mark_mounted(struct ufs2_core *c) {
     c->sb.state = UFS2_STATE_MOUNTED;
     return ufs2_sb_update(c);
 }
+enum vfs_error ufs2_core_inspect(struct ufs2_core *c, struct block_device *d) {
+    return ufs2_core_open_impl(c, d, false, false, true);
+}
 enum vfs_error ufs2_core_open_ex(struct ufs2_core *c, struct block_device *d, bool want_write, bool mark_mounted) {
+    return ufs2_core_open_impl(c, d, want_write, mark_mounted, false);
+}
+enum vfs_error ufs2_core_open_impl(struct ufs2_core *c, struct block_device *d, bool want_write, bool mark_mounted, bool inspect) {
     memset(c, 0, sizeof(*c));
     if (!d || !d->registered) return VFS_IO;
     if (d->block_size < 512 || UFS2_BLOCK % d->block_size) return VFS_UNSUPPORTED;
@@ -371,7 +377,7 @@ enum vfs_error ufs2_core_open_ex(struct ufs2_core *c, struct block_device *d, bo
     e = journal_scan(c, false, &found);
     if (e != VFS_OK) { block_release(d); memset(c, 0, sizeof(*c)); return e; }
     c->pending = found;
-    if (found && c->read_only) { block_release(d); memset(c, 0, sizeof(*c)); return VFS_RECOVERY; }
+    if (found && c->read_only && !inspect) { block_release(d); memset(c, 0, sizeof(*c)); return VFS_RECOVERY; }
     if (!c->read_only) {
         c->stage = vmm_alloc_pages(c->sb.geo.max_txn);
         if (!c->stage) { block_release(d); memset(c, 0, sizeof(*c)); return VFS_NO_SPACE; }

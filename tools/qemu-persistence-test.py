@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Multi-boot persistence test: data written in one boot must be read back in the next.
 
+Default: UltriumFS 2. `--v1` runs the compatibility test: a UltriumFS 1 volume must mount
+read-only through the shell and the disk image must stay byte-identical.
+
 Every boot is an independent QEMU process using the same disposable image under
 test-images/. Between boots the image file is decoded on the host by an independent
 reader (ufs_image.py), so the evidence is the disk file, not kernel memory.
@@ -16,7 +19,8 @@ reader (ufs_image.py), so the evidence is the disk file, not kernel memory.
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ultrium_qemu as U
-import ufs_image as I
+import ufs2_image as I
+import hashlib
 
 IMAGE = "persistence.img"
 
@@ -43,15 +47,20 @@ def expected_boot2():
 
 def host_check(path, expected, state, label):
     img = I.Image(path)
+    if img.pending_transactions():
+        raise RuntimeError("%s: %d committed journal transaction(s) left unapplied" % (label, img.pending_transactions()))
     tree = img.tree()
     if tree != expected:
         missing = sorted(set(expected) - set(tree)); extra = sorted(set(tree) - set(expected))
         bad = sorted(k for k in expected if k in tree and tree[k] != expected[k])
         raise RuntimeError("%s: host-decoded image differs (missing %s, extra %s, wrong %s)" % (label, missing, extra, bad))
-    if img.state != state:
-        raise RuntimeError("%s: superblock state %d, expected %d" % (label, img.state, state))
-    print("  host check (%s): %d items, content identical, superblock state %s" %
-          (label, len(tree), "clean" if state == 0 else "modified (unclean)"), flush=True)
+    problems = img.findings()
+    if problems:
+        raise RuntimeError("%s: the independent checker found problems: %s" % (label, problems[:5]))
+    if img.state() != state:
+        raise RuntimeError("%s: superblock state %d, expected %d" % (label, img.state(), state))
+    print("  host check (%s): %d items, content identical, independent consistency check clean, journal empty, state %s" %
+          (label, len(tree), "clean" if state == 0 else "mounted (abrupt stop)"), flush=True)
 
 
 def mount(vm):
@@ -64,7 +73,45 @@ def barrier(vm):
     vm.run_test("ultrium test interrupts", 2)   # serial checkpoint: input queue drained
 
 
+def v1_compat():
+    path = U.make_image("persistence-v1.img", 64)
+    print("v1 boot 1: build an UltriumFS 1 volume (explicit v1 format), shutdown", flush=True)
+    vm = U.VM(image=path)
+    try:
+        vm.run_test("ultrium test persist v1fixture", 1)
+        vm.line("shutdown")
+        vm.expect_guest_shutdown()
+    finally:
+        vm.close()
+    def digest():
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    before = digest()
+    with open(path, "rb") as f:
+        if f.read(8) != b"ULTRIUMF":
+            raise RuntimeError("the fixture is not an UltriumFS 1 image")
+    print("v1 boot 2: mount through the shell (must be read-only), read, refuse writes, unmount", flush=True)
+    vm = U.VM(image=path)
+    try:
+        mount(vm)
+        barrier(vm)
+        vm.run_test("ultrium test persist v1verify", 1)
+        vm.line("ultrium storage check vda")        # the v2 checker must refuse a v1 volume without touching it
+        vm.line("ultrium storage unmount /volumes/disk")
+        barrier(vm)
+        vm.line("shutdown")
+        vm.expect_guest_shutdown()
+    finally:
+        vm.close()
+    if digest() != before:
+        raise RuntimeError("the UltriumFS 1 image changed after a read-only mount")
+    print("PASS v1 compatibility: mounted read-only, data readable, writes refused, image byte-identical")
+    return 0
+
+
 def main():
+    if "--v1" in sys.argv:
+        return v1_compat()
     path = U.make_image(IMAGE, 64)
     print("boot 1: format, populate, shutdown", flush=True)
     vm = U.VM(image=path)
@@ -158,7 +205,7 @@ def main():
     finally:
         vm.close()
     host_check(path, crashed, 0, "after boot 5")
-    print("PASS persistence: data survived 3 clean shutdown/boot cycles and an abrupt stop")
+    print("PASS persistence: UltriumFS 2 data survived 3 clean shutdown/boot cycles and an abrupt stop")
     return 0
 
 

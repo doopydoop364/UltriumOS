@@ -9,6 +9,7 @@
 #include "fs/vfs.h"
 #include "ush.h"
 #include "storage/storage_ops.h"
+#include "fs/ufs2_fs.h"
 
 /* UltriumFS tests call the backend operations directly on memory-backed block
    devices (no VFS mount). Corruption cases craft on-disk bytes with an
@@ -615,6 +616,7 @@ static const char *mount_cleanup(const char *result) {
     for (size_t i = 0; vfs_mount_info_at(i, &info); ++i)
         if (info.persistent) { (void)vfs_unmount(info.path); break; }
     if (ufs_mounted()) ufs_test_abandon();
+    if (ufs2_fs_mounted()) ufs2_fs_test_abandon();
     if (dev) { dev->flags &= ~BLOCK_FLAG_DEAD; if (!block_memory_destroy(dev) && !result) result = "device destroy failed"; dev = 0; }
     struct vfs_remove_report report;
     (void)vfs_remove_tree("/volumes", &report);
@@ -720,7 +722,7 @@ static const char *vfs_mount_unmount_cycle(void) {
     MCHECK(ush_execute("ultrium storage sync") == USH_OK, "sync command failed");
     /* Unmount, RAMFS unaffected, remount, data persisted on the device. */
     MCHECK(ush_execute("ultrium storage unmount /volumes/disk") == USH_OK && vfs_mount_count() == 1, "unmount failed");
-    MCHECK(ufs_mounted() == false && dev->holders == 0, "unmount did not release the volume");
+    MCHECK(!ufs_mounted() && !ufs2_fs_mounted() && dev->holders == 0, "unmount did not release the volume");
     MCHECK(vfs_has("/rf", "ram") && vfs_stat("/volumes/disk", &(struct vfs_info){0}) == VFS_OK, "RAMFS state damaged by unmount");
     MCHECK(vfs_stat("/volumes/disk/projects", &(struct vfs_info){0}) == VFS_NOT_FOUND, "volume content visible after unmount");
     MCHECK(ush_execute("ultrium storage mount ufst /volumes/disk -r") == USH_OK, "remount failed");
