@@ -51,3 +51,14 @@ Removal never recurses without `-r`/`--recursive`; `-y`/`--yes` only skips confi
 USH parsing must preserve argument case/quoted whitespace, reject malformed or over-limit input before execution, and keep completion bounded. Command completion/help use registry metadata; path completion uses VFS enumeration. Preserve input when completion cannot fit. Run both `--keyboard-regression` and `--shell-regression` after editor/parser changes; diagnostic capture is bounded and off outside explicit tests.
 
 `auth` and `as` are reserved design concepts, currently unavailable. Never add a shell-only privilege toggle or imitation password prompt. Authorization requires enforced kernel/process/VFS boundaries and trusted human approval separate from an agent. See `docs/authorization-architecture.md`; `-y` is never authorization.
+
+## Component ownership and parallel work
+
+Ultrium is organized into **Ultrium Kernel**, **Ultrium OS** and **Ultrium GUI**; see `docs/component-architecture.md`. Dependencies point downward only (GUI -> OS -> Kernel). Today everything except documentation still builds into one ring-0 kernel image, so these are ownership boundaries, not isolation. Never claim userspace isolation because code lives in a different directory.
+
+- **Ownership:** Kernel: boot, CPU, memory, interrupts, drivers, block devices, VFS and filesystems, power. OS: USH, command registry, system services, configuration, permissions, AI. GUI: not started.
+- **Worktrees and branches:** each agent uses its own `git worktree` and a separate descriptive feature branch per subsystem. Do not edit another agent's worktree or branch. Stack PRs on their immediate predecessor and say so in the PR.
+- **Public-interface review:** a change to a subsystem header, the command registry/help contract, an on-disk format, or (once it exists) `shared/` needs its own called-out section in the PR, updated docs, and maintainer review. Do not change another component's public interface as a side effect.
+- **Subsystem tests:** run the tests for the subsystem touched plus the full suite before opening a PR: memory/allocator (`ultrium test memory`), interrupts, filesystem (`ultrium test filesystem`), shell and keyboard (`--shell-regression`, `--keyboard-regression`), power (`tools/qemu-power-test.py`, when present). See `docs/kernel-testing.md`.
+- **Structural moves:** relocate code between directories only in a separate small PR whose build and QEMU tests prove it is a no-op. Do not undertake a full rewrite.
+- **`shared/`:** create only when a second consumer needs a stable ABI or protocol; freestanding, explicit-width, versioned.
