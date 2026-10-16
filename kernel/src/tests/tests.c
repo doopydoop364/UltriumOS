@@ -1111,6 +1111,16 @@ void kernel_tests_persist_clean(void) { run(persist_clean_cases, persist_clean_c
 void kernel_tests_persist_v1fixture(void) { run(persist_v1fixture_cases, persist_v1fixture_count); }
 void kernel_tests_persist_v1verify(void) { run(persist_v1verify_cases, persist_v1verify_count); }
 void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
+void kernel_tests_persist_v2_big(void) { run(persist_v2_big_cases, 1); }
+void kernel_tests_persist_v2_bigverify(void) { run(persist_v2_bigverify_cases, 1); }
+void kernel_tests_persist_v2_cut_dataflush(void) { run(persist_v2_cut_dataflush_cases, 1); }
+void kernel_tests_persist_v2_cut_journal(void) { run(persist_v2_cut_journal_cases, 1); }
+void kernel_tests_persist_v2_cut_commit(void) { run(persist_v2_cut_commit_cases, 1); }
+void kernel_tests_persist_v2_cut_home(void) { run(persist_v2_cut_home_cases, 1); }
+void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoint_cases, 1); }
+void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
+void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
+void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
 void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
 void kernel_tests_ufs2crash(void) {
@@ -1142,3 +1152,5 @@ void kernel_tests_shell_interactive(void) {
     const struct test_case test = {"USH QMP interactive session", shell_interactive_session};
     run(&test, 1);
 }
+void tests_serial_text(const char *text) { report(text); }
+void tests_serial_number(uint64_t value) { report_number(value); }
