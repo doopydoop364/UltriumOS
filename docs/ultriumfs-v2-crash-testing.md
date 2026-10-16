@@ -80,8 +80,8 @@ The existing five-boot persistence test and the v1 read-only compatibility test 
 ## Findings
 
 - The recovery matrix found **no filesystem or journal bug**: all operations recover to an allowed state under all modelled interruptions. No on-disk format change was needed.
-- Two bugs were in the test model itself while writing it: a write into freed, fragmented space is chunked into several transactions (so intermediate sizes are valid, not corruption), and a batch of cases needs a second memory device that is not overwritten by the first fixture's snapshot. Both were fixed in the tests; no check was relaxed to make a test pass.
-- The host reader initially had no check that distinguishes a semantically wrong bitmap from a wrong bitmap checksum; the negative controls now exercise both.
+- One test-model error was found while writing the matrix: a write into freed, fragmented space is chunked into several transactions, so intermediate sizes are valid (not corruption). The check was generalised to "a committed prefix of the written data", not relaxed; the ordered-data content check still applies to every surviving byte.
+- Removing the explicit data flush before a metadata transaction is not detectable (see the negative-control table); it is redundant given the journal-payload flush, as already noted in `ultriumfs-v2-journal.md`.
 
 ## Known limitations
 
