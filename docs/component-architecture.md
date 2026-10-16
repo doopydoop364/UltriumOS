@@ -47,8 +47,8 @@ Risks: moving code early creates the illusion of isolation; a full rewrite would
 
 | Path | Component | Notes |
 | --- | --- | --- |
-| `kernel/src/main.c`, `memory/`, `system/` (exceptions, interrupts, power, reboot), `keyboard/`, `terminal/` | Kernel | terminal and keyboard are drivers today |
-| `kernel/src/fs/` (VFS, RAMFS) | Kernel | kernel-only filesystem; future block/UltriumFS code belongs here |
+| `kernel/src/main.c`, `memory/`, `system/` (exceptions, interrupts, power, reboot), `keyboard/`, `terminal/`, `pci/`, `storage/` (block layer, virtio-blk) | Kernel | terminal, keyboard and storage are drivers today |
+| `kernel/src/fs/` (VFS, RAMFS, UltriumFS) | Kernel | kernel-only filesystems; the storage shell commands in `storage/storage_ops.c` are OS-facing but still kernel-resident |
 | `kernel/src/ush.c`, `shell.c` | OS (kernel-resident) | first candidates for userspace migration |
 | `kernel/src/tests/` | Kernel test harness, with OS-facing cases | |
 | `tools/`, `docs/` | shared tooling | |
