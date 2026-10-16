@@ -173,6 +173,7 @@ static const struct ush_command registry[] = {
     B("stage3","ultrium test persist","Verify the boot-two changes",kernel_tests_persist_stage3),
     B("clean","ultrium test persist","Previous session ended cleanly",kernel_tests_persist_clean),
     B("unclean","ultrium test persist","Abrupt stop is reported",kernel_tests_persist_unclean),
+    B("ufs2","ultrium test","UltriumFS 2 journal and crash-recovery tests",kernel_tests_ufs2),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
     B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
     B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),

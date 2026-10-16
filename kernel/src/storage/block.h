@@ -91,4 +91,23 @@ void block_test_fail_after(int32_t successful_transfers);
 struct block_device *block_memory_create(const char *name, uint32_t block_size,
                                          uint64_t block_count, bool read_only);
 bool block_memory_destroy(struct block_device *device);
+
+/* Volatile-cache crash model (tests only). With the cache enabled, writes stay
+   pending until a flush; a simulated power cut keeps all, none, a prefix, a
+   seeded-random subset, or a torn prefix of the pending writes. */
+enum block_power_policy { POWER_KEEP_ALL, POWER_LOSE_ALL, POWER_KEEP_PREFIX, POWER_RANDOM, POWER_TORN,
+                         POWER_KEEP_SUFFIX /* keep only the last `parameter` pending writes: models reordering */ };
+bool block_memory_enable_cache(struct block_device *device);
+/* Cut power before executing I/O event `events` (writes and flushes counted
+   from now, 0 = before the first). All I/O then fails until a power cycle. */
+void block_memory_crash_after(struct block_device *device, int64_t events);
+void block_memory_power_cycle(struct block_device *device, enum block_power_policy policy, uint32_t parameter);
+uint64_t block_memory_events(struct block_device *device);
+bool block_memory_crashed(struct block_device *device);
+const char *block_memory_crash_phase(struct block_device *device);
+uint32_t block_memory_pending(struct block_device *device);
+bool block_memory_copy(struct block_device *to, struct block_device *from);
+/* Label of the I/O phase in progress; recorded when a crash point fires. */
+void block_set_phase(const char *phase);
+const char *block_get_phase(void);
 #endif

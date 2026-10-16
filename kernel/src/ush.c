@@ -80,6 +80,7 @@ enum ush_result ush_fs_failure(enum vfs_error error) {
         case VFS_CORRUPT: terminal_write("on-disk structure is corrupt\n"); break;
         case VFS_BUSY: terminal_write("busy (open files, mount point, or shutting down)\n"); break;
         case VFS_DENIED: terminal_write("not permitted\n"); break;
+        case VFS_RECOVERY: terminal_write("recovery required (mount read-write on a writable device, or run 'ultrium storage check')\n"); break;
         default: terminal_write("unsupported or busy operation\n"); break;
     }
     return USH_FS_ERROR;
