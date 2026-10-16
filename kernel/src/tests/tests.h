@@ -9,6 +9,7 @@ void kernel_tests_interrupts(void);
 void kernel_tests_filesystem(void);
 void kernel_tests_storage(void);
 void kernel_tests_ufs2(void);
+void kernel_tests_ufs2fs(void);
 void kernel_tests_persist_blank(void);
 void kernel_tests_persist_populate(void);
 void kernel_tests_persist_stage1(void);

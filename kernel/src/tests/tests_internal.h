@@ -12,6 +12,8 @@ extern const struct test_case ultriumfs_cases[];
 extern const size_t ultriumfs_case_count;
 extern const struct test_case ufs2_journal_cases[];
 extern const size_t ufs2_journal_case_count;
+extern const struct test_case ufs2_fs_cases[];
+extern const size_t ufs2_fs_case_count;
 extern const struct test_case storage_disk_cases[];
 extern const size_t storage_disk_case_count;
 extern const struct test_case persist_blank_cases[], persist_populate_cases[], persist_stage1_cases[],
