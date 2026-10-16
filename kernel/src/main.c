@@ -62,6 +62,7 @@ static void hcf(void) {
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "memory/heap.h"
+#include "memory/aspace.h"
 #include "scheduler/task.h"
 #include "scheduler/scheduler.h"
 #include "fs/vfs.h"
@@ -110,6 +111,7 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
+    terminal_write(aspace_system_init() ? "USER ADDRESS SPACE SUPPORT READY\n" : "USER ADDRESS SPACES UNAVAILABLE\n");
     terminal_write(task_system_init() && sched_init() ? "TASK SYSTEM AND SCHEDULER READY\n" : "TASK SYSTEM UNAVAILABLE\n");
     if (!vfs_init()) {
         terminal_write_color("RAM FILESYSTEM INIT FAILED\n", TERMINAL_MUTED);

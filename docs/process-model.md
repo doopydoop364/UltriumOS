@@ -72,7 +72,7 @@ All physical frames stay behind PMM ownership handles (move-only, one releasing 
 
 ## Address spaces
 
-- User processes get a new top-level page table whose **lower half (PML4 slots 0–255) is private and starts empty** and whose **upper half (slots 256–511) is copied from the kernel root** at creation, so the kernel, the direct map and the scratch/region mappings are present on every entry to ring 0 without switching `CR3`. Upper-half slots are populated before the first process is created; the kernel does not add new top-level slots later (the creation code checks this).
+- User processes get a new top-level page table whose **lower half (PML4 slots 0–255) is private and starts empty** and whose **upper half (slots 256–511) is copied from the kernel root** at creation, so the kernel, the direct map and the scratch/region mappings are present on every entry to ring 0 without switching `CR3`. The bootloader's own top-level entries can carry the User bit (the direct map's does), so each copy **clears it** - x86 user access needs the User bit at every level, so nothing under the kernel half is reachable from ring 3. Upper-half slots are populated before the first process is created; the kernel does not add new top-level slots later (the creation code checks this).
 - User mappings carry the User bit; kernel mappings never do. W^X is enforced: a user page is writable or executable, never both. Data pages are `NX`.
 - Valid user addresses are canonical lower-half addresses in `[0x0000000000400000, 0x00007fffffff0000)`. Page 0 and everything below 4 MiB is never mapped. A guard page below each user stack stays unmapped.
 - The kernel never dereferences a user pointer directly. User memory is read and written by walking the process's page tables in software and copying through the direct map, validating Present/User/Write bits per page. This avoids relying on SMAP/exception fix-ups and cannot fault in the kernel.
@@ -113,7 +113,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | Process and thread model specification | `feature/process-model` | this document |
 | Context switching | `feature/context-switching` | **implemented, QEMU-tested**: task table, 16 KiB kernel stacks with canary, register-level `task_switch_to`, TSS.RSP0 update, cooperative only (`ultrium test tasks`, 3 cases). No queues or preemption yet |
 | Scheduler | `feature/scheduler` | **implemented, QEMU-tested**: round robin, 50 ms slices, yield/block/wake/sleep, idle task, reaper, timer preemption of ring-3 and `PREEMPTIBLE` kernel tasks only (`ultrium test scheduler`, 9 cases). Kernel code is not preemptible. Single CPU only |
-| Per-process address spaces | `feature/user-address-spaces` | not started |
+| Per-process address spaces | `feature/user-address-spaces` | **implemented, QEMU-tested** (`memory/aspace.c`, `ultrium test aspace`, 9 cases): private PML4, shared kernel half with the User bit cleared, W^X, bounded mappings with rollback, software-walk validated copies, frame limit, destroy-while-active. No ring 3 code runs yet. SMEP/SMAP are enabled only if the CPU reports them (QEMU's default CPU model does not) |
 | Ring 3 execution | `feature/ring3` | not started |
 | System calls | `feature/syscalls` | not started |
 | ELF64 loader | `feature/elf-loader` | not started |
