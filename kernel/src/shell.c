@@ -4,6 +4,7 @@
 #include "terminal/terminal.h"
 #include "system/reboot.h"
 #include "system/power.h"
+#include "storage/storage_cmd.h"
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "system/exceptions.h"
@@ -160,10 +161,15 @@ static const struct ush_command registry[] = {
     B("memory","ultrium test","Memory and exceptions",kernel_tests_memory),
     B("interrupts","ultrium test","Timer and keyboard IRQs",kernel_tests_interrupts),
     B("filesystem","ultrium test","VFS and RAMFS",kernel_tests_filesystem),
+    B("storage","ultrium test","Block-device tests (memory-backed)",kernel_tests_storage),
+    G("disk","ultrium test storage","Scratch virtio disk tests (writes to a scratch disk only)"),
+    B("run","ultrium test storage disk","Run virtio disk tests",kernel_tests_storage_disk),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
     B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
     B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),
     B("all","ultrium test","All kernel suites",kernel_tests_all),
+    G("storage","ultrium","Block devices and (planned) volumes"),
+    B("devices","ultrium storage","List block devices and capacity",storage_cmd_devices),
     G("ai","ultrium","AI namespace; services unavailable"),
     B("status","ultrium ai","Report service availability",ai_status),
     G("shell","ultrium","Ultrium Shell; auth/as planned and unavailable (no privilege boundary)"),
