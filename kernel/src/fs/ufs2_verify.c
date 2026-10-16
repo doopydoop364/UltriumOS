@@ -207,7 +207,8 @@ static void scan_directory(struct vctx *x, uint32_t dir) {
     if (name_cap_hit) x->r->large_directory_unchecked = true;
 }
 
-enum vfs_error ufs2_verify(struct ufs2_core *c, struct ufs2_report *r) {
+enum vfs_error ufs2_verify(struct ufs2_core *c, struct ufs2_report *r) { return ufs2_verify_ex(c, r, 0); }
+enum vfs_error ufs2_verify_ex(struct ufs2_core *c, struct ufs2_report *r, uint8_t **owned) {
     memset(r, 0, sizeof(*r));
     struct vctx x; memset(&x, 0, sizeof(x));
     x.c = c; x.r = r; x.uuid = c->sb.uuid; x.g = &c->sb.geo;
@@ -220,7 +221,7 @@ enum vfs_error ufs2_verify(struct ufs2_core *c, struct ufs2_report *r) {
     if (!x.own || !x.disk || !x.istate || !x.igen || !x.iparent) { free_all(&x); return VFS_NO_SPACE; }
 
     /* Superblock and journal conditions. */
-    if (c->sb_was_degraded) add(&x, UFS2_REPAIRABLE, UF_SB_COPY, 0, 0);
+    if (c->sb_degraded) add(&x, UFS2_REPAIRABLE, UF_SB_COPY, 0, 0);
     if (c->read_only && c->sb.state == UFS2_STATE_MOUNTED) add(&x, UFS2_REPAIRABLE, UF_STALE_STATE, 0, 0);
 
     /* Disk bitmap. */
@@ -273,6 +274,7 @@ enum vfs_error ufs2_verify(struct ufs2_core *c, struct ufs2_report *r) {
         if (d && !o) { if (!r->bitmap_leaked++) add(&x, UFS2_REPAIRABLE, UF_BITMAP_LEAK, 0, b); }
         else if (!d && o) { if (!r->bitmap_unmarked++) add(&x, UFS2_REPAIRABLE, UF_BITMAP_UNMARKED, 0, b); }
     }
+    if (owned) { *owned = x.own; x.own = 0; }      /* handed to the caller */
     free_all(&x);
     return VFS_OK;
 }

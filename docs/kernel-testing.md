@@ -15,7 +15,7 @@ ultrium test shell
 ultrium test all
 ```
 
-`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `filesystem` runs eight RAMFS/VFS tests. `shell` runs seven USH cases for native/structured commands, registry/help, compatibility, safe operations, quoting, completion and output contracts. `all` runs all groups (95 cases, including 7 block-device, 20 UltriumFS 1, 16 UltriumFS 2 journal and 21 UltriumFS 2 filesystem cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
+`memory` runs 14 memory and exception descriptor checks. `interrupts` checks that the periodic timer IRQ advances the system tick and that PS/2 IRQ input is enabled without queue overflow. `filesystem` runs eight RAMFS/VFS tests. `shell` runs seven USH cases for native/structured commands, registry/help, compatibility, safe operations, quoting, completion and output contracts. `all` runs all groups (103 cases, including 7 block-device, 20 UltriumFS 1, 16 UltriumFS 2 journal and 29 UltriumFS 2 filesystem and checker cases). The legacy `ultrium system memory test` still runs the 128 × 32-byte slab stress check through the runner. Existing `ultrium system memory map test`, `ultrium system memory mapping test`, and `ultrium system memory mapping managed test` remain available.
 
 The suite wraps the existing PMM, heap, page-table, scratch-mapping, and managed-page self-tests. Ownership cases check valid allocate/release cycles, double-free and stale-handle rejection after physical reuse, generation changes, invalid and forged handles, injected exhaustion, and accounting restoration. Other cases check four simultaneous physical allocations, heap block isolation, 32 managed mappings, bounded-pool exhaustion, stale translation removal, and cleanup. The virtual-region case checks single and multi-page mappings, boundary access, noncontiguous physical backing, translation, repeated reuse, invalid frees, both backing-frame and page-table rollback, and exhaustion of all 4096 pages and 64 allocation records. The permission case checks RW/NX defaults, read-only and RX updates, invalid W^X/input rejection, CR0.WP/NXE configuration, and cleanup without intentionally faulting. The RAMFS cases check normalized paths, file contents and EOF, directory iteration, generation-checked handle reuse, allocation rollback, and allocator accounting. The original slab stress code has one implementation shared by both command paths.
 
@@ -64,7 +64,7 @@ To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` t
 
 ## Persistence
 
-`python3 tools/qemu-persistence-test.py` runs five QEMU boots on one disposable image; see `docs/persistence-testing.md`. The `ultrium test persist ...` commands it uses need a mounted scratch volume and are not part of `ultrium test all`.
+`python3 tools/qemu-persistence-test.py` runs five QEMU boots on one disposable image (UltriumFS 2, host-verified) and `--v1` runs the v1 read-only compatibility test; see `docs/persistence-testing.md`. The `ultrium test persist ...` commands it uses need a mounted scratch volume and are not part of `ultrium test all`.
 
 ## UltriumFS 2 journal tests
 

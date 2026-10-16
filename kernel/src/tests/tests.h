@@ -17,6 +17,8 @@ void kernel_tests_persist_modify(void);
 void kernel_tests_persist_stage3(void);
 void kernel_tests_persist_clean(void);
 void kernel_tests_persist_unclean(void);
+void kernel_tests_persist_v1fixture(void);
+void kernel_tests_persist_v1verify(void);
 void kernel_tests_ultriumfs(void);
 void kernel_tests_storage_disk(void);
 void kernel_test_slab_stress(void);

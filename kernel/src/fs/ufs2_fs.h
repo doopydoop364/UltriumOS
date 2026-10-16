@@ -30,6 +30,9 @@ const char *ufs2_finding_name(uint8_t code);
    non-NULL the caller receives ownership bitmaps (vmm pages, caller frees) so a
    mount can reuse them. Returns VFS_OK even when findings exist. */
 enum vfs_error ufs2_verify(struct ufs2_core *core, struct ufs2_report *report);
+/* Same, and hands back the derived ownership bitmap (flat, bit b = block b,
+   vmm pages the caller releases with vmm_free_pages) for bitmap repair. */
+enum vfs_error ufs2_verify_ex(struct ufs2_core *core, struct ufs2_report *report, uint8_t **owned);
 /* Disk bitmap as the verifier sees it: flat bit array (bit b = block b). */
 
 /* ---- volume ---- */

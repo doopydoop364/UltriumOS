@@ -17,7 +17,7 @@ extern const size_t ufs2_fs_case_count;
 extern const struct test_case storage_disk_cases[];
 extern const size_t storage_disk_case_count;
 extern const struct test_case persist_blank_cases[], persist_populate_cases[], persist_stage1_cases[],
-    persist_modify_cases[], persist_stage3_cases[], persist_clean_cases[], persist_unclean_cases[];
+    persist_modify_cases[], persist_stage3_cases[], persist_clean_cases[], persist_unclean_cases[], persist_v1fixture_cases[], persist_v1verify_cases[];
 extern const size_t persist_blank_count, persist_populate_count, persist_stage1_count, persist_modify_count,
-    persist_stage3_count, persist_clean_count, persist_unclean_count;
+    persist_stage3_count, persist_clean_count, persist_unclean_count, persist_v1fixture_count, persist_v1verify_count;
 #endif

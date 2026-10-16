@@ -4,6 +4,7 @@
 #include "tests_internal.h"
 #include "fs/vfs.h"
 #include "fs/ultriumfs.h"
+#include "storage/storage_ops.h"
 #include "storage/block.h"
 #include "memory.h"
 
@@ -73,11 +74,12 @@ static bool dir_has(const char *path, unsigned expected_entries) {
 }
 
 static const char *mounted_volume(void) {
-    struct ufs_info info;
-    REQUIRE(ufs_mounted() && ufs_get_info(&info), "no UltriumFS volume is mounted");
+    struct storage_volume vol;
+    REQUIRE(storage_volume_status(&vol), "no UltriumFS volume is mounted");
+    REQUIRE(vol.version == 2, "the mounted volume is not UltriumFS 2");
     struct vfs_info st;
-    REQUIRE(vfs_stat(MP, &st) == VFS_OK && st.persistent && st.filesystem && st.filesystem[0] == 'U', "mount point is not served by UltriumFS");
-    REQUIRE(!info.faulted && !info.read_only, "volume is faulted or read-only");
+    REQUIRE(vfs_stat(MP, &st) == VFS_OK && st.persistent && st.filesystem && st.filesystem[10] == '2', "mount point is not served by UltriumFS 2");
+    REQUIRE(!vol.faulted && !vol.read_only && !vol.repair_recommended, "volume is faulted, read-only or needs repair");
     return 0;
 }
 
@@ -85,13 +87,13 @@ static const char *persist_blank(void) {
     struct block_device *d = 0;
     for (size_t i = 0; i < block_count_devices(); ++i) if (block_device_at(i)->flags & BLOCK_FLAG_SCRATCH) d = block_device_at(i);
     REQUIRE(d, "no scratch disk attached");
-    REQUIRE(!ufs_mounted() && d->holders == 0, "the disk is already in use");
+    struct storage_volume vol;
+    REQUIRE(!storage_volume_status(&vol) && d->holders == 0, "the disk is already in use");
     for (uint64_t b = 0; b < 16 && b < d->block_count; ++b) {   /* block 0 must still be blank */
         REQUIRE(block_read(d, b, 1, io, d->block_size) == BLOCK_OK, "read failed");
         for (uint32_t i = 0; i < d->block_size; ++i) REQUIRE(!io[i], "disk is not blank: it was written without an explicit format");
     }
-    REQUIRE(ufs_mount(d, false) == VFS_CORRUPT, "an unformatted disk was accepted as UltriumFS");
-    REQUIRE(!ufs_mounted() && d->holders == 0, "a rejected mount left the disk claimed");
+    REQUIRE(storage_probe(d) == STORAGE_UNKNOWN, "an unformatted disk was recognised as UltriumFS");
     return 0;
 }
 
@@ -161,16 +163,57 @@ static const char *s3_growth(void) {
     return 0;
 }
 static const char *persist_clean(void) {
-    struct ufs_info info;
-    REQUIRE(ufs_get_info(&info), "no volume mounted");
-    REQUIRE(!info.unclean_mount, "the previous session was not shut down cleanly");
-    REQUIRE(info.orphan_inodes == 0, "orphaned items present");
+    struct storage_volume vol;
+    REQUIRE(storage_volume_status(&vol), "no volume mounted");
+    REQUIRE(!vol.unclean, "the previous session was not shut down cleanly");
+    REQUIRE(vol.orphans == 0, "orphaned items present");
     return 0;
 }
 static const char *persist_unclean(void) {
-    struct ufs_info info;
-    REQUIRE(ufs_get_info(&info), "no volume mounted");
-    REQUIRE(info.unclean_mount, "an abrupt stop was not reported as an unclean session");
+    struct storage_volume vol;
+    REQUIRE(storage_volume_status(&vol), "no volume mounted");
+    REQUIRE(vol.unclean, "an abrupt stop was not reported as an unclean session");
+    REQUIRE(!vol.read_only && !vol.repair_recommended, "an unclean (journaled) volume must still mount read-write with no repair needed");
+    return 0;
+}
+
+/* ---- UltriumFS 1 compatibility: built in-kernel (v1 formatting is not exposed to the shell) ---- */
+static const char *v1_fixture(void) {
+    struct block_device *d = 0;
+    for (size_t i = 0; i < block_count_devices(); ++i) if (block_device_at(i)->flags & BLOCK_FLAG_SCRATCH) d = block_device_at(i);
+    REQUIRE(d, "no scratch disk attached");
+    struct storage_volume vol;
+    REQUIRE(!storage_volume_status(&vol) && d->holders == 0, "the disk is in use");
+    REQUIRE(ufs_format(d, "V1FIXTURE") == VFS_OK, "v1 format failed");
+    REQUIRE(ufs_mount(d, false) == VFS_OK, "v1 mount failed");
+    const struct vfs_backend_ops *fs = ufs_backend();
+    struct vfs_file f = {0}; size_t n;
+    const char *r = 0;
+    if (fs->create_directory("/docs") != VFS_OK || fs->create_file("/docs/readme") != VFS_OK || fs->create_file("/big.bin") != VFS_OK) r = "v1 fixture creation failed";
+    if (!r && (fs->file_open("/docs/readme", VFS_OPEN_WRITE, &f) != VFS_OK || fs->file_write(&f, "version one data", 16, &n) != VFS_OK || fs->file_close(&f) != VFS_OK)) r = "v1 write failed";
+    if (!r && fs->file_open("/big.bin", VFS_OPEN_WRITE, &f) == VFS_OK) {
+        for (size_t off = 0; off < 9000 && !r;) {
+            size_t part = 9000 - off < 3000 ? 9000 - off : 3000;
+            pat(io, off, part, 21);
+            if (fs->file_write(&f, io, part, &n) != VFS_OK || n != part) r = "v1 big write failed";
+            off += part;
+        }
+        if (fs->file_close(&f) != VFS_OK) r = "v1 close failed";
+    } else if (!r) r = "v1 open failed";
+    enum vfs_error s = ufs_sync(), u = ufs_unmount();
+    REQUIRE(!r, r);
+    REQUIRE(s == VFS_OK && u == VFS_OK, "v1 unmount failed");
+    return 0;
+}
+static const char *v1_verify(void) {
+    struct storage_volume vol;
+    REQUIRE(storage_volume_status(&vol) && vol.version == 1 && vol.read_only, "the v1 volume was not mounted read-only");
+    REQUIRE(check_text(MP "/docs/readme", "version one data") && check_pattern(MP "/big.bin", 9000, 21), "v1 data unreadable");
+    REQUIRE(dir_has(MP, 2), "v1 root listing wrong");
+    struct vfs_file f = {0};
+    REQUIRE(vfs_create_file(MP "/new") == VFS_READ_ONLY && vfs_create_directory(MP "/newdir") == VFS_READ_ONLY, "a v1 volume accepted a create");
+    REQUIRE(vfs_unlink(MP "/big.bin") == VFS_READ_ONLY && vfs_rename(MP "/docs", MP "/docs2") == VFS_READ_ONLY, "a v1 volume accepted a modification");
+    REQUIRE(vfs_file_open(MP "/big.bin", VFS_OPEN_WRITE, &f) == VFS_READ_ONLY, "a v1 volume accepted a write open");
     return 0;
 }
 static const char *persist_after_crash(void) {
@@ -187,9 +230,11 @@ const struct test_case persist_modify_cases[] = {{"modify: update, grow and remo
 const struct test_case persist_stage3_cases[] = {
     {"stage 3: changes persisted", s3_changes}, {"stage 3: file growth persisted", s3_growth}};
 const struct test_case persist_clean_cases[] = {{"previous session was clean", persist_clean}};
+const struct test_case persist_v1fixture_cases[] = {{"build an UltriumFS 1 fixture (explicit v1 format)", v1_fixture}};
+const struct test_case persist_v1verify_cases[] = {{"UltriumFS 1 volume is mounted read-only and refuses changes", v1_verify}};
 const struct test_case persist_unclean_cases[] = {{"abrupt stop reported as unclean", persist_unclean}, {"data written before the stop survived", persist_after_crash}};
 #define COUNT(a) (sizeof(a) / sizeof((a)[0]))
 const size_t persist_blank_count = COUNT(persist_blank_cases), persist_populate_count = COUNT(persist_populate_cases),
     persist_stage1_count = COUNT(persist_stage1_cases), persist_modify_count = COUNT(persist_modify_cases),
     persist_stage3_count = COUNT(persist_stage3_cases), persist_clean_count = COUNT(persist_clean_cases),
-    persist_unclean_count = COUNT(persist_unclean_cases);
+    persist_unclean_count = COUNT(persist_unclean_cases), persist_v1fixture_count = COUNT(persist_v1fixture_cases), persist_v1verify_count = COUNT(persist_v1verify_cases);

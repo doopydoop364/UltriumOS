@@ -76,6 +76,10 @@ enum vfs_error ufs2_core_open(struct ufs2_core *core, struct block_device *devic
    ufs2_core_mark_mounted() (so a failed verification leaves the state untouched). */
 enum vfs_error ufs2_core_open_ex(struct ufs2_core *core, struct block_device *device, bool want_write, bool mark_mounted);
 enum vfs_error ufs2_core_mark_mounted(struct ufs2_core *core);
+/* Read-only open for the checker: a committed-but-unapplied journal is reported
+   in core->pending instead of being refused. Never writes. */
+enum vfs_error ufs2_core_inspect(struct ufs2_core *core, struct block_device *device);
+enum vfs_error ufs2_core_open_impl(struct ufs2_core *core, struct block_device *device, bool want_write, bool mark_mounted, bool inspect);
 enum vfs_error ufs2_core_close(struct ufs2_core *core);
 
 /* Metadata transactions. Blocks modified inside a transaction become durable

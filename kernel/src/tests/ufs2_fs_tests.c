@@ -4,6 +4,11 @@
 #include "tests_internal.h"
 #include "fs/ufs2_fs.h"
 #include "fs/ufs2_meta.h"
+#include "fs/ufs2_check.h"
+#include "fs/ultriumfs.h"
+#include "fs/crc32c.h"
+#include "ush.h"
+#include "storage/storage_ops.h"
 #include "storage/block.h"
 #include "memory/pmm.h"
 #include "memory.h"
@@ -650,6 +655,239 @@ static const char *f_extent_limit(void) {
     return teardown(0);
 }
 
+
+/* ---- checker and repair ---- */
+static struct ufs2_check_result cr;
+static uint32_t device_digest(void) {                 /* CRC-32C over the whole device image */
+    uint32_t c = crc32c_begin();
+    static uint8_t blk[4096];
+    uint32_t per = BLOCK / dev->block_size;
+    for (uint64_t b = 0; b + per <= dev->block_count; b += per) { (void)block_read(dev, b, per, blk, BLOCK); c = crc32c_update(c, blk, BLOCK); }
+    return crc32c_end(c);
+}
+static bool cr_has(const struct ufs2_report *r, uint8_t code) { for (uint32_t i = 0; i < r->stored; ++i) if (r->item[i].code == code) return true; return false; }
+static bool mounts_rw(void) {
+    struct ufs2_fs_info info;
+    bool ok = ufs2_fs_mount(dev, true, &report) == VFS_OK && ufs2_fs_get_info(&info) && !info.read_only && !info.repair_recommended;
+    return ok;
+}
+
+static const char *k_clean_check(void) {
+    const char *s = build_fixture();
+    if (s) return teardown(s);
+    uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.status == VFS_OK, "check failed to run");
+    CHECK(!cr.before.count[0] && !cr.before.count[1] && !cr.before.count[2] && !cr.journal_pending && cr.safe_to_mount_writable, "a consistent volume was reported as damaged");
+    CHECK(cr.before.inodes_used == 5 && cr.before.directories == 3 && cr.before.files == 2, "the check miscounted the fixture");
+    CHECK(block_memory_events(dev) == events && device_digest() == before, "a read-only check wrote to the device");
+    CHECK(mounts_rw(), "the checked volume does not mount");
+    CHECK(ufs2_check(dev, false, &cr) == VFS_BUSY, "a mounted volume was checked");
+    ufs2_fs_test_abandon();
+    return teardown(0);
+}
+static const char *k_check_damage_never_writes(void) {
+    static const unsigned kinds[] = {C_OVERLAP, C_DANGLING, C_DUP_REF, C_PARENT, C_CYCLE, C_DIR_FOOTER, C_INODE_CRC};
+    for (unsigned i = 0; i < 7; ++i) {
+        const char *s = build_fixture();
+        if (s) return teardown(s);
+        s = apply_damage((enum damage)kinds[i]);
+        if (s) return teardown(s);
+        uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+        CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.status == VFS_OK && cr.before.count[2] && !cr.safe_to_mount_writable, "damage not reported as structural");
+        CHECK(cr_has(&cr.before, expected_code[kinds[i]]), "the check named the wrong problem");
+        CHECK(block_memory_events(dev) == events && device_digest() == before, "the check modified a damaged volume");
+        /* --repair must refuse structural damage and leave the image byte-identical. */
+        CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_refused && !cr.repair_ran && cr.refusal, "repair of structural damage was not refused");
+        CHECK(block_memory_events(dev) == events && device_digest() == before, "a refused repair modified the device");
+        const char *t = teardown(0);
+        if (t) return t;
+    }
+    return 0;
+}
+static const char *k_repair_bitmap(void) {
+    struct { void (*edit)(uint8_t *); bool reseal; const char *name; } cases[] = {
+        {e_leak, true, "leaked block"}, {e_crc_bitmap, false, "bitmap checksum"}, {e_padding, true, "padding bits"}};
+    for (unsigned k = 0; k < 4; ++k) {
+        const char *s = build_fixture();
+        if (s) return teardown(s);
+        if (k < 3) bitmap_edit(0, cases[k].edit, cases[k].reseal);
+        else {   /* an owned block marked free */
+            struct ufs2_inode f1 = get_inode(3);
+            uint32_t bk = f1.slot[0].physical / UFS2_BITMAP_BITS, off = f1.slot[0].physical % UFS2_BITMAP_BITS;
+            rd(G.bitmap_start + bk); raw[off >> 3] &= (uint8_t)~(1U << (off & 7)); ufs2_bitmap_seal(UUID, G.bitmap_start + bk, raw); wr(G.bitmap_start + bk);
+        }
+        uint32_t before = device_digest();
+        CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.before.count[0] && !cr.before.count[2] && !cr.safe_to_mount_writable, "repairable damage not reported");
+        CHECK(device_digest() == before, "the check wrote to the device");
+        CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_ran && !cr.repair_refused && cr.fully_repaired && cr.action_count >= 1, "repair did not complete");
+        CHECK(!cr.after.count[0] && !cr.after.count[2], "problems remain after a reported full repair");
+        CHECK(ufs2_check(dev, false, &cr) == VFS_OK && !cr.before.count[0] && !cr.before.count[2] && cr.safe_to_mount_writable, "the repaired volume still checks as damaged");
+        CHECK(mounts_rw(), "the repaired volume does not mount read-write");
+        { const char *r = stream_verify("/f1", 9000, 1); CHECK(!r, r); }
+        { const char *r = stream_verify("/f2", 5000, 2); CHECK(!r, r); }
+        CHECK(fs->create_file("/after-repair") == VFS_OK && clean(), "the repaired volume is not writable or not clean");
+        ufs2_fs_test_abandon();
+        /* Repair is idempotent. */
+        CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_ran, "second repair failed");
+        const char *t = teardown(0);
+        if (t) return t;
+    }
+    return 0;
+}
+static const char *k_repair_superblock_and_state(void) {
+    const char *s = build_fixture();
+    if (s) return teardown(s);
+    /* Damaged superblock copy B plus a stale mounted state. */
+    CHECK(ufs2_fs_mount(dev, true, &report) == VFS_OK && fs->create_file("/touch") == VFS_OK, "setup failed");
+    ufs2_fs_test_abandon();                                      /* leaves state = mounted */
+    uint32_t last = G.total - 1;
+    rd(last); raw[100] ^= 1; wr(last);
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr_has(&cr.before, UF_SB_COPY) && cr_has(&cr.before, UF_STALE_STATE) && !cr.safe_to_mount_writable, "damaged copy / stale state not reported");
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_ran && cr.fully_repaired, "repair did not complete");
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && !cr.before.count[0] && !cr.before.count[2], "superblock or state problem remains after repair");
+    struct ufs2_core probe;
+    CHECK(ufs2_core_inspect(&probe, dev) == VFS_OK && !probe.sb_was_degraded && probe.sb.state == UFS2_STATE_CLEAN, "superblock copies or state not repaired");
+    ufs2_test_abandon(&probe);
+    CHECK(mounts_rw(), "volume does not mount after repair");
+    { struct ufs2_fs_info info; CHECK(ufs2_fs_get_info(&info) && !info.unclean, "stale state not cleared"); }
+    ufs2_fs_test_abandon();
+    /* Both copies damaged: reported, nothing written, refused. */
+    rd(0); raw[100] ^= 1; wr(0); rd(last); raw[100] ^= 1; wr(last);
+    uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.superblock_unreadable && !cr.safe_to_mount_writable, "both superblock copies damaged but reported fine");
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.superblock_unreadable && cr.repair_refused, "repair attempted without a valid superblock");
+    CHECK(block_memory_events(dev) == events && device_digest() == before, "a check of an unrecoverable volume wrote to it");
+    return teardown(0);
+}
+static const char *k_repair_journal(void) {
+    const char *s = setup(4096, 2048, true);
+    if (s) return teardown(s);
+    refresh_geometry();
+    /* Crash a create exactly after its commit is durable but before its home writes: the journal holds one transaction.
+       Every iteration starts from a freshly formatted volume so earlier crashes cannot leave state behind. */
+    int64_t window = -1;
+    for (int64_t point = 0; point < 60 && window < 0; ++point) {
+        if (ufs2_fs_mounted()) ufs2_fs_test_abandon();
+        block_memory_power_cycle(dev, POWER_KEEP_ALL, 0);
+        CHECK(ufs2_fs_format(dev, "FSTEST", UUID) == VFS_OK && ufs2_fs_mount(dev, true, &report) == VFS_OK, "format/mount failed");
+        CHECK(fs->create_directory("/dir") == VFS_OK && ufs2_fs_sync() == VFS_OK, "setup failed");
+        block_memory_crash_after(dev, point);
+        (void)fs->create_file("/dir/pending");
+        bool crashed = block_memory_crashed(dev);
+        const char *phase = block_memory_crash_phase(dev);
+        ufs2_fs_test_abandon();
+        if (crashed && phase[0] == 'h' && phase[1] == 'o' && phase[2] == 'm' && phase[3] == 'e' && phase[4] == '-' && phase[5] == 'w') window = point;
+        else if (!crashed) break;
+    }
+    CHECK(window >= 0, "home-write window not found");
+    /* Re-run the winning iteration so the device holds exactly that state. */
+    block_memory_power_cycle(dev, POWER_KEEP_ALL, 0);
+    CHECK(ufs2_fs_format(dev, "FSTEST", UUID) == VFS_OK && ufs2_fs_mount(dev, true, &report) == VFS_OK, "format/mount failed");
+    CHECK(fs->create_directory("/dir") == VFS_OK && ufs2_fs_sync() == VFS_OK, "setup failed");
+    block_memory_crash_after(dev, window);
+    (void)fs->create_file("/dir/pending");
+    CHECK(block_memory_crashed(dev), "the crash point did not fire");
+    ufs2_fs_test_abandon();
+    block_memory_power_cycle(dev, POWER_LOSE_ALL, 0);               /* only the flushed (committed) state survives */
+    uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.journal_pending && cr.pending_transactions == 1 && cr_has(&cr.before, UF_JOURNAL_PENDING), "a committed, unapplied transaction was not reported");
+    CHECK(block_memory_events(dev) == events && device_digest() == before, "the check replayed or wrote");
+    CHECK(ufs2_fs_mount(dev, false, &report) == VFS_RECOVERY && dev->holders == 0, "a read-only mount of a volume needing replay must say recovery is required");
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_ran && cr.fully_repaired && cr.action_count >= 1, "journal repair did not complete");
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && !cr.journal_pending && !cr.before.count[0] && !cr.before.count[2], "journal still pending after repair");
+    CHECK(mounts_rw() && fs->stat("/dir/pending", &(struct vfs_info){0}) == VFS_OK && clean(), "the committed create was not recovered");
+    ufs2_fs_test_abandon();
+    return teardown(0);
+}
+static const char *k_repair_policy(void) {
+    /* Orphans are reported but never deleted; a read-only device and a device without flush refuse repairs. */
+    const char *s = build_fixture();
+    if (s) return teardown(s);
+    uint32_t rb = root_block();
+    rd(rb); ufs2_dirent_clear(raw, 1); ufs2_dirblock_seal(UUID, rb, raw, 1, 1, 0); wr(rb);
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.before.count[1] == 1 && cr.safe_to_mount_writable, "orphan not reported (or made the volume look unsafe)");
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.after.count[1] == 1, "repair must not delete an orphan");
+    CHECK(ufs2_check(dev, false, &cr) == VFS_OK && cr.before.count[1] == 1, "the orphan disappeared");
+    bitmap_edit(0, e_leak, true);
+    uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+    dev->flags |= BLOCK_FLAG_READ_ONLY;
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_refused && !cr.repair_ran, "repair on a read-only device not refused");
+    dev->flags &= ~BLOCK_FLAG_READ_ONLY; dev->flags &= ~BLOCK_FLAG_FLUSH;
+    CHECK(ufs2_check(dev, true, &cr) == VFS_OK && cr.repair_refused && !cr.repair_ran, "repair on a device without flush not refused");
+    dev->flags |= BLOCK_FLAG_FLUSH;
+    CHECK(block_memory_events(dev) == events && device_digest() == before, "refused repairs modified the device");
+    return teardown(0);
+}
+
+/* ---- shell integration and the v1 compatibility policy ---- */
+static const char *k_shell_commands(void) {
+    (void)ush_execute("go /");
+    uint64_t frames = pmm_free_pages();
+    CHECK(vfs_create_directory("/volumes") == VFS_OK && vfs_create_directory("/volumes/disk") == VFS_OK, "mount point setup failed");
+    dev = block_memory_create("ufst", 512, 16384, false);
+    CHECK(dev, "device creation failed");
+    uint32_t blank = device_digest();
+    CHECK(ush_execute("ultrium storage mount ufst /volumes/disk") == USH_FS_ERROR && device_digest() == blank && dev->holders == 0, "a blank disk was mounted or modified");
+    CHECK(ush_execute("ultrium storage check ufst") == USH_FS_ERROR && device_digest() == blank, "checking a blank disk succeeded or wrote");
+    CHECK(ush_execute("ultrium storage format ufst -y") == USH_OK, "format failed");
+    CHECK(storage_probe(dev) == STORAGE_V2, "formatted disk not recognised as UltriumFS 2");
+    CHECK(ush_execute("ultrium storage check ufst") == USH_OK, "a fresh volume failed its check");
+    CHECK(ush_execute("ultrium storage mount ufst /volumes/disk") == USH_OK, "mount failed");
+    CHECK(ush_execute("write /volumes/disk/note \"hello\"") == USH_OK && ush_execute("ultrium storage info /volumes/disk") == USH_OK, "write/info failed");
+    CHECK(ush_execute("ultrium storage check ufst") == USH_FS_ERROR, "a mounted volume was checked");
+    CHECK(ush_execute("ultrium storage format ufst -y") == USH_FS_ERROR, "a mounted volume was formatted");
+    CHECK(ush_execute("ultrium storage unmount /volumes/disk") == USH_OK && ush_execute("ultrium storage check ufst --repair") == USH_OK, "unmount or repair of a consistent volume failed");
+    CHECK(ush_execute("ultrium storage check ufst --bogus") == USH_USAGE && ush_execute("ultrium storage check") == USH_USAGE, "check argument validation missing");
+    struct vfs_remove_report rr;
+    (void)vfs_remove_tree("/volumes", &rr);
+    CHECK(block_memory_destroy(dev), "device destroy failed");
+    dev = 0;
+    return pmm_free_pages() == frames ? 0 : "frame accounting changed";
+}
+static const char *k_v1_read_only_policy(void) {
+    (void)ush_execute("go /");
+    uint64_t frames = pmm_free_pages();
+    if (vfs_create_directory("/volumes") != VFS_OK || vfs_create_directory("/volumes/disk") != VFS_OK) return "mount point setup failed";
+    dev = block_memory_create("ufst", 512, 16384, false);
+    if (!dev) return "device creation failed";
+    const char *r = 0;
+    /* Build a v1 volume with the v1 driver directly: shell formatting creates v2 only. */
+    const struct vfs_backend_ops *v1 = ufs_backend();
+    if (ufs_format(dev, "V1") != VFS_OK || ufs_mount(dev, false) != VFS_OK) r = "v1 setup failed";
+    if (!r) {
+        struct vfs_file f = {0}; size_t n;
+        if (v1->create_directory("/old") != VFS_OK || v1->create_file("/old/data") != VFS_OK || v1->file_open("/old/data", VFS_OPEN_WRITE, &f) != VFS_OK ||
+            v1->file_write(&f, "legacy data", 11, &n) != VFS_OK || v1->file_close(&f) != VFS_OK) r = "v1 fixture failed";
+        if (ufs_sync() != VFS_OK || ufs_unmount() != VFS_OK) r = "v1 unmount failed";
+    }
+    uint32_t before = device_digest(); uint64_t events = block_memory_events(dev);
+    if (!r && storage_probe(dev) != STORAGE_V1) r = "a v1 volume was not recognised";
+    if (!r && ush_execute("ultrium storage check ufst") != USH_FS_ERROR) r = "the v2 checker accepted a v1 volume";
+    if (!r && ush_execute("ultrium storage mount ufst /volumes/disk") != USH_OK) r = "a v1 volume could not be mounted read-only";
+    if (!r) {
+        struct storage_volume vol;
+        struct vfs_info st; struct vfs_file f = {0}; size_t n;
+        if (!storage_volume_status(&vol) || vol.version != 1 || !vol.read_only) r = "v1 volume not read-only";
+        else if (vfs_stat("/volumes/disk/old/data", &st) != VFS_OK || st.size != 11) r = "v1 data unreadable";
+        else if (vfs_file_open("/volumes/disk/old/data", VFS_OPEN_READ, &f) != VFS_OK || vfs_file_read(&f, chunk, 64, &n) != VFS_OK || n != 11 || memcmp(chunk, "legacy data", 11)) r = "v1 content wrong";
+        if (f.generation) (void)vfs_file_close(&f);
+        if (!r && (vfs_create_file("/volumes/disk/new") != VFS_READ_ONLY || vfs_unlink("/volumes/disk/old/data") != VFS_READ_ONLY || vfs_rename("/volumes/disk/old", "/volumes/disk/o2") != VFS_READ_ONLY)) r = "a v1 volume accepted a change";
+        if (!r && ush_execute("ultrium storage sync") != USH_OK) r = "sync of a read-only v1 volume failed";
+        if (!r && ush_execute("ultrium storage unmount /volumes/disk") != USH_OK) r = "v1 unmount failed";
+    }
+    if (!r && (block_memory_events(dev) != events || device_digest() != before)) r = "mounting a v1 volume modified the device image";
+    if (!r && ush_execute("ultrium storage format ufst -y") != USH_OK) r = "an explicit confirmed format of a v1 disk failed";
+    if (!r && storage_probe(dev) != STORAGE_V2) r = "reformat did not create UltriumFS 2";
+    struct vfs_remove_report rr;
+    (void)vfs_remove_tree("/volumes", &rr);
+    if (ufs_mounted()) ufs_test_abandon();
+    if (ufs2_fs_mounted()) ufs2_fs_test_abandon();
+    if (!block_memory_destroy(dev) && !r) r = "device destroy failed";
+    dev = 0;
+    if (!r && pmm_free_pages() != frames) r = "frame accounting changed";
+    return r;
+}
+
 /* ---- I/O errors: every operation, every transfer ---- */
 enum { OP_CREATE, OP_MKDIR, OP_WRITE, OP_RENAME, OP_UNLINK, OP_COUNT };
 static enum vfs_error run_op(unsigned op) {
@@ -705,6 +943,14 @@ const struct test_case ufs2_fs_cases[] = {
     {"ufs2 fs orphans are tolerated", f_orphans},
     {"ufs2 fs stale-generation entry is dangling", f_stale_generation},
     {"ufs2 fs stale state on read-only open", f_stale_state},
-    {"ufs2 fs I/O errors in every operation", f_io_errors}
+    {"ufs2 fs I/O errors in every operation", f_io_errors},
+    {"ufs2 check: clean volume and read-only guarantee", k_clean_check},
+    {"ufs2 check: damage reported, never written", k_check_damage_never_writes},
+    {"ufs2 repair: bitmap", k_repair_bitmap},
+    {"ufs2 repair: superblock copy and stale state", k_repair_superblock_and_state},
+    {"ufs2 repair: committed journal transaction", k_repair_journal},
+    {"ufs2 repair: orphans and device policy", k_repair_policy},
+    {"ufs2 shell: format, mount, check, unmount", k_shell_commands},
+    {"ufs2 v1 volumes: read-only, byte-identical", k_v1_read_only_policy}
 };
 const size_t ufs2_fs_case_count = sizeof(ufs2_fs_cases) / sizeof(ufs2_fs_cases[0]);

@@ -1108,6 +1108,8 @@ void kernel_tests_persist_stage1(void) { run(persist_stage1_cases, persist_stage
 void kernel_tests_persist_modify(void) { run(persist_modify_cases, persist_modify_count); }
 void kernel_tests_persist_stage3(void) { run(persist_stage3_cases, persist_stage3_count); }
 void kernel_tests_persist_clean(void) { run(persist_clean_cases, persist_clean_count); }
+void kernel_tests_persist_v1fixture(void) { run(persist_v1fixture_cases, persist_v1fixture_count); }
+void kernel_tests_persist_v1verify(void) { run(persist_v1verify_cases, persist_v1verify_count); }
 void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
 void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
