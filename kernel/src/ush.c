@@ -1,4 +1,5 @@
 #include "ush.h"
+#include "storage/storage_ops.h"
 #include "terminal/terminal.h"
 
 static char cwd[VFS_PATH_MAX + 1U] = "/";
@@ -61,7 +62,9 @@ static enum ush_result tokenize(const char *line, struct ush_args *args, bool pa
 }
 enum ush_result ush_tokenize(const char *line, struct ush_args *args) { return tokenize(line, args, false); }
 enum ush_result ush_tokenize_prefix(const char *line, struct ush_args *args) { return tokenize(line, args, true); }
-static enum ush_result failure(enum vfs_error error) {
+enum ush_result ush_fs_failure(enum vfs_error error);
+static enum ush_result failure(enum vfs_error error) { return ush_fs_failure(error); }
+enum ush_result ush_fs_failure(enum vfs_error error) {
     if (error == VFS_OK) return USH_OK;
     terminal_write("Filesystem operation failed: ");
     switch (error) {
@@ -159,6 +162,8 @@ static enum ush_result remove_item(size_t argc, char **argv) {
     return ush_request_confirmation(question, removal_answer) ? USH_PENDING : USH_USAGE;
 }
 enum ush_result ush_operation(const char *name, size_t argc, char **argv) {
+    if (name[0] == 's' && name[1] == 't' && name[2] == 'o' && name[3] == 'r' && name[4] == 'a' && name[5] == 'g' && name[6] == 'e' && name[7] == ' ')
+        return storage_operation(name + 8, argc, argv);
     if (ush_word_equal(name, "remove")) return remove_item(argc, argv);
     bool transfer = ush_word_equal(name, "copy") || ush_word_equal(name, "move") || ush_word_equal(name, "rename");
     bool list = ush_word_equal(name, "list"), where = ush_word_equal(name, "where");
@@ -209,7 +214,8 @@ enum ush_result ush_operation(const char *name, size_t argc, char **argv) {
         terminal_write("Path: "); terminal_write(path);
         terminal_write(info.type == VFS_NODE_DIRECTORY ? "\nType: folder\n" : "\nType: file\nBytes: ");
         if (info.type == VFS_NODE_FILE) { number(info.size); terminal_write("\n"); }
-        terminal_write("Storage: volatile RAMFS\n"); return USH_OK;
+        terminal_write("Storage: "); terminal_write(info.filesystem ? info.filesystem : "unknown");
+        terminal_write(info.persistent ? " (persistent)\n" : " (volatile)\n"); return USH_OK;
     }
     if (write) {
         char contents[USH_INPUT_MAX + 1U]; size_t used = 0;

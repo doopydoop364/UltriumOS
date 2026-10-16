@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+struct vfs_backend_ops;
 #define VFS_NAME_MAX 31U
 #define VFS_PATH_MAX 127U
 #define VFS_FILE_MAX 4096U
@@ -40,8 +41,39 @@ enum vfs_open_flags { VFS_OPEN_READ = 1U, VFS_OPEN_WRITE = 2U };
 struct vfs_file { uint32_t slot; uint32_t generation; };
 struct vfs_dir { uint32_t slot; uint32_t generation; };
 
-struct vfs_info { enum vfs_node_type type; size_t size; };
+/* `filesystem` and `persistent` come from the mounted backend, never from the shell. */
+struct vfs_info { enum vfs_node_type type; size_t size; const char *filesystem; bool persistent; };
 enum vfs_error vfs_stat(const char *absolute_path, struct vfs_info *out);
+
+/* Mounts. The root filesystem is the volatile RAMFS. Other backends mount on
+   existing empty directories of the root filesystem (no nesting). Paths are
+   routed by longest mount-point prefix; handles carry their mount index. */
+#define VFS_MOUNT_MAX 4U
+struct vfs_mount_ops {
+    enum vfs_error (*sync)(void);      /* flush pending changes; failure keeps the mount */
+    enum vfs_error (*release)(void);   /* sync and release the backend; failure keeps it mounted
+                                          unless mounted() then reports false */
+    bool (*mounted)(void);
+};
+struct vfs_mount_info {
+    char path[VFS_PATH_MAX + 1U];
+    const char *filesystem, *source;
+    bool persistent, read_only;
+    uint32_t open_handles;
+};
+enum vfs_error vfs_mount(const char *absolute_path, const struct vfs_backend_ops *ops,
+                         const struct vfs_mount_ops *mount_ops, const char *filesystem,
+                         const char *source, bool persistent, bool read_only);
+enum vfs_error vfs_unmount(const char *absolute_path);
+size_t vfs_mount_count(void);
+bool vfs_mount_info_at(size_t index, struct vfs_mount_info *out);
+/* Sync every mounted persistent filesystem. Continues past failures and
+   returns the first error; *synced counts successful syncs. */
+enum vfs_error vfs_sync_all(size_t *synced);
+bool vfs_is_mount_point(const char *absolute_path);
+/* Stop accepting changes (shutdown). Reads keep working. */
+void vfs_freeze(bool frozen);
+bool vfs_frozen(void);
 
 /* Backends currently mount only at root. Tree removal must be revised before
    introducing mounts or symbolic links: never cross them implicitly. */

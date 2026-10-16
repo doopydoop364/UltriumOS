@@ -191,6 +191,15 @@ static void write_hex(uint32_t value) {
     terminal_write(text);
 }
 
+static void storage_number(size_t value) {
+    char digits[21]; int n = 0;
+    do { digits[n++] = (char)('0' + value % 10); value /= 10; } while (value);
+    char out[22]; int o = 0;
+    while (n) out[o++] = digits[--n];
+    out[o] = 0;
+    terminal_write(out);
+}
+
 static uint64_t containing_type(uint64_t physical) {
     if (!state.memmap) return 0xffff;
     for (uint64_t i = 0; i < state.memmap->entry_count; ++i) {
@@ -217,7 +226,13 @@ void power_status(void) {
     terminal_write("\nSLP_TYP (a/b): "); write_hex(state.slp_typ_a); terminal_write(" / "); write_hex(state.slp_typ_b);
     terminal_write("\nACPI enabled (SCI_EN): ");
     terminal_write((in16(state.pm1a) & PM1_SCI_EN) ? "yes\n" : "no; shutdown will be refused\n");
-    terminal_write("Persistent filesystems to synchronize: none mounted\n");
+    terminal_write("Shutdown first synchronizes mounted persistent volumes (see 'ultrium storage volumes')\n");
+}
+
+static void (*sync_prepare)(struct power_sync_report *);
+static void (*sync_abort)(void);
+void power_set_sync_hooks(void (*prepare)(struct power_sync_report *), void (*abort)(void)) {
+    sync_prepare = prepare; sync_abort = abort;
 }
 
 static uint64_t save_flags_and_disable(void) {
@@ -233,14 +248,29 @@ void power_shutdown(void) {
         terminal_write(".\nThe system is still running.\n");
         return;
     }
-    /* Orderly sequence. Command intake stops with interrupts masked. Writable
-       persistent filesystems and block devices are synced here once any
-       exist; today only volatile RAMFS is mounted. */
-    uint64_t flags = save_flags_and_disable();
-    terminal_write("No persistent filesystems are mounted; nothing to synchronize.\n");
+    /* Orderly sequence. Filesystem sync and device flush run first, with
+       interrupts still enabled (the storage drivers poll, but nothing here
+       may depend on masked interrupts). If synchronization fails the
+       shutdown is abandoned and the system keeps running. */
+    struct power_sync_report report = {0, 0, true};
+    if (sync_prepare) sync_prepare(&report);
+    if (!report.ok) {
+        terminal_write("Shutdown aborted: filesystem synchronization failed; data may NOT be persisted.\n");
+        terminal_write("Resolve the error, or release the volume with 'ultrium storage unmount <path>', then retry.\n");
+        if (sync_abort) sync_abort();
+        return;
+    }
+    if (report.volumes) {
+        terminal_write("Synchronized "); storage_number(report.synced);
+        terminal_write(" persistent volume(s) and flushed their devices.\n");
+    } else {
+        terminal_write("No persistent filesystems are mounted; nothing to synchronize.\n");
+    }
+    uint64_t flags = save_flags_and_disable();   /* command intake stops here */
     if (!(in16(state.pm1a) & PM1_SCI_EN)) {
         terminal_write("Shutdown failed: ACPI mode is not enabled (SCI_EN clear); not enabling it unverified.\n");
         if (flags & 0x200) __asm__ volatile ("sti");
+        if (sync_abort) sync_abort();
         return;
     }
     terminal_write("Requesting ACPI S5 power-off.\n");
@@ -251,4 +281,5 @@ void power_shutdown(void) {
     for (volatile uint32_t spin = 0; spin < 50000000u; ++spin) __asm__ volatile ("pause");
     terminal_write("Shutdown failed: the platform did not power off.\nThe system is still running.\n");
     if (flags & 0x200) __asm__ volatile ("sti");
+    if (sync_abort) sync_abort();
 }
