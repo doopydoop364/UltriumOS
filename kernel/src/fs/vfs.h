@@ -30,7 +30,8 @@ enum vfs_error {
     VFS_IO,          /* block-device error */
     VFS_CORRUPT,     /* on-disk structure failed validation */
     VFS_BUSY,        /* open handles, mount point or frozen for shutdown */
-    VFS_DENIED       /* operation not permitted by policy (e.g. not a scratch disk) */
+    VFS_DENIED,      /* operation not permitted by policy (e.g. not a scratch disk) */
+    VFS_RECOVERY     /* journal recovery or repair is required before this mount */
 };
 
 enum vfs_node_type { VFS_NODE_FILE, VFS_NODE_DIRECTORY };
