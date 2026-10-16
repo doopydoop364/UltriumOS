@@ -19,6 +19,7 @@ enum task_state { TASK_UNUSED = 0, TASK_CREATED, TASK_READY, TASK_RUNNING, TASK_
 #define TASK_FLAG_IMMORTAL    4U   /* boot and idle tasks cannot be terminated */
 
 struct process;
+struct aspace;
 struct task {
     /* Offset 0 is read by the assembly switch routine. */
     uint64_t saved_rsp;                  /* kernel stack pointer while not running */
@@ -31,7 +32,7 @@ struct task {
     void (*entry)(void *);
     void *arg;
     struct process *process;
-    uint64_t cr3;                        /* address-space root, 0 = kernel root */
+    struct aspace *aspace;               /* NULL = the kernel's tables */
     uint32_t slice_left;
     uint32_t block_reason;
     uint64_t wake_tick;                  /* deadline for SCHED_BLOCK_SLEEP */

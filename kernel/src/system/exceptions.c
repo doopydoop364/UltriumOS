@@ -13,13 +13,16 @@ struct tss64 {
     uint64_t reserved2;
     uint16_t reserved3, io_map_base;
 } __attribute__((packed));
-struct fault_frame { uint64_t vector, error, rip, cs, rflags; };
+struct fault_frame { uint64_t vector, error, rip, cs, rflags, rsp, ss; };   /* rsp and ss are valid only for faults from ring 3 */
 static struct gate idt[256] __attribute__((aligned(16)));
-static uint64_t gdt[5] __attribute__((aligned(16)));
+/* 0 null, 1 kernel code (0x08), 2 kernel data (0x10), 3 user data (0x18|3), 4 user code (0x20|3), 5-6 TSS (0x28).
+   The user pair sits directly above the kernel data selector so SYSCALL/SYSRET could use it later (STAR base 0x10). */
+static uint64_t gdt[7] __attribute__((aligned(16)));
 static struct tss64 tss __attribute__((aligned(16)));
 static uint8_t double_fault_stack[16 * 1024] __attribute__((aligned(16)));
 static bool initialized;
 static bool tss_initialized;
+static void (*user_fault_hook)(uint64_t vector, uint64_t error, uint64_t rip, uint64_t address);
 static uint16_t kernel_cs;
 
 /* Reload CS after installing our private GDT; Limine's GDT is borrowed and
@@ -47,6 +50,13 @@ static void print_hex(uint64_t value) {
 }
 __attribute__((noreturn)) void ultrium_exception_report(const struct fault_frame *f) {
     __asm__ volatile("cli");
+    /* A fault taken in ring 3 ends only that process (the hook does not return). NMI, double fault
+       and machine check stay fatal; so does every fault taken in ring 0. */
+    if ((f->cs & 3) == 3 && user_fault_hook && f->vector != 2 && f->vector != 8 && f->vector != 18) {
+        uint64_t address = 0;
+        if (f->vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(address));
+        user_fault_hook(f->vector, f->error, f->rip, address);
+    }
     terminal_write_color("\nCPU EXCEPTION - KERNEL HALTED\n", TERMINAL_ACCENT);
     static const char *const names[32] = {
         "Divide Error", "Debug", "Non-maskable Interrupt", "Breakpoint",
@@ -319,13 +329,15 @@ bool exceptions_init(void) {
     tss.io_map_base = sizeof(tss);
     uint64_t tss_base = (uint64_t)(uintptr_t)&tss;
     uint64_t tss_limit = sizeof(tss) - 1;
-    gdt[3] = (tss_limit & 0xffff) | ((tss_base & 0xffffff) << 16) |
+    gdt[3] = 0x00cff2000000ffffULL;                    /* user data, DPL 3 */
+    gdt[4] = 0x00affa000000ffffULL;                    /* user 64-bit code, DPL 3 */
+    gdt[5] = (tss_limit & 0xffff) | ((tss_base & 0xffffff) << 16) |
              (0x89ULL << 40) | (((tss_limit >> 16) & 0xf) << 48) |
              (((tss_base >> 24) & 0xff) << 56);
-    gdt[4] = tss_base >> 32;
+    gdt[6] = tss_base >> 32;
     struct gdtr gdtr = {(uint16_t)(sizeof(gdt) - 1), (uint64_t)(uintptr_t)gdt};
     ultrium_load_gdt(&gdtr);
-    uint16_t tss_selector = 0x18;
+    uint16_t tss_selector = 0x28;
     __asm__ volatile("ltr %0" : : "rm"(tss_selector) : "memory");
     __asm__ volatile("mov %%cs, %0" : "=r"(kernel_cs));
     for (size_t i = 0; i < 32; ++i) {
@@ -344,7 +356,7 @@ bool exceptions_ready(void) { return initialized; }
 bool exceptions_self_test(void) {
     uint16_t tr;
     __asm__ volatile("str %0" : "=rm"(tr));
-    return initialized && tss_initialized && tr == 0x18 &&
+    return initialized && tss_initialized && tr == 0x28 &&
            (idt[8].ist & 7) == 1 && (idt[8].flags & 0x8f) == 0x8e;
 }
 bool exceptions_install_irq_gate(unsigned vector, void (*handler)(void)) {
@@ -359,3 +371,11 @@ bool exceptions_install_irq_gate(unsigned vector, void (*handler)(void)) {
 }
 void exceptions_set_kernel_stack(uint64_t top) { tss.rsp0 = top; }
 uint64_t exceptions_kernel_stack(void) { return tss.rsp0; }
+void exceptions_set_user_fault_hook(void (*hook)(uint64_t vector, uint64_t error, uint64_t rip, uint64_t address)) { user_fault_hook = hook; }
+/* int 0x80: an interrupt gate (interrupts stay disabled inside) callable from ring 3 (DPL 3). */
+bool exceptions_install_syscall_gate(void (*handler)(void)) {
+    if (!initialized || !handler) return false;
+    uintptr_t p = (uintptr_t)handler;
+    idt[0x80] = (struct gate){(uint16_t)p, kernel_cs, 0, 0xee, (uint16_t)(p >> 16), (uint32_t)(p >> 32), 0};
+    return true;
+}
