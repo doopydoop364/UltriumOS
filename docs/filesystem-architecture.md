@@ -1,6 +1,6 @@
 # Filesystem architecture proposal
 
-Status: accepted architecture for the initial Phase B filesystem. The minimal VFS/RAMFS implementation and its current scope are recorded in [ramfs.md](ramfs.md). There is no block-device filesystem or persistent file storage.
+Status: accepted architecture for the initial Phase B filesystem. **Update:** a block-device layer ([block-devices.md](block-devices.md)), the UltriumFS format ([ultriumfs-format.md](ultriumfs-format.md)) and VFS mounts ([ultriumfs-vfs.md](ultriumfs-vfs.md)) now exist; statements below that say persistent storage is absent describe the original proposal. The minimal VFS/RAMFS implementation and its current scope are recorded in [ramfs.md](ramfs.md). There is no block-device filesystem or persistent file storage.
 
 ## Goals and boundaries
 

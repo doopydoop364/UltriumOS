@@ -169,8 +169,14 @@ static const struct ush_command registry[] = {
     B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
     B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),
     B("all","ultrium test","All kernel suites",kernel_tests_all),
-    G("storage","ultrium","Block devices and (planned) volumes"),
+    G("storage","ultrium","Block devices, UltriumFS volumes and mounts"),
     B("devices","ultrium storage","List block devices and capacity",storage_cmd_devices),
+    N("volumes","ultrium storage","List mounted filesystems","","storage volumes",0,0),
+    N("format","ultrium storage","Format a scratch disk as UltriumFS (destructive)","<device> [-y|--yes]","storage format",1,2),
+    N("mount","ultrium storage","Mount an UltriumFS device on an empty folder","<device> <path> [-r|--read-only]","storage mount",2,3),
+    N("unmount","ultrium storage","Synchronize and unmount a volume","<path>","storage unmount",1,1),
+    N("sync","ultrium storage","Flush all mounted persistent volumes","","storage sync",0,0),
+    N("info","ultrium storage","Show filesystem, space and mode for a path","<path>","storage info",1,1),
     G("ai","ultrium","AI namespace; services unavailable"),
     B("status","ultrium ai","Report service availability",ai_status),
     G("shell","ultrium","Ultrium Shell; auth/as planned and unavailable (no privilege boundary)"),
@@ -218,7 +224,8 @@ bool ush_registry_valid(void) {
         const struct ush_command *c = &registry[i];
         if (!c->name[0] || c->minimum > c->maximum || (c->operation && c->builtin)) return false;
         if (c->operation) {
-            const char *operations[] = {"list","go","where","new file","new folder","view","write","remove","info","copy","move","rename"};
+            const char *operations[] = {"list","go","where","new file","new folder","view","write","remove","info","copy","move","rename",
+                "storage volumes","storage format","storage mount","storage unmount","storage sync","storage info"};
             bool known = false;
             for (size_t j = 0; j < sizeof(operations)/sizeof(operations[0]); ++j)
                 if (same(c->operation, operations[j])) known = true;

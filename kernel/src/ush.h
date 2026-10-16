@@ -30,6 +30,7 @@ bool ush_confirmation_pending(void);
 const char *ush_confirmation_prompt(void);
 enum ush_result ush_answer_confirmation(const char *line);
 const char *ush_cwd(void);
+enum ush_result ush_fs_failure(enum vfs_error error);
 bool ush_compatibility(void);
 void ush_version(void);
 void ush_compatibility_status(void);

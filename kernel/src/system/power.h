@@ -1,6 +1,7 @@
 #ifndef ULTRIUM_POWER_H
 #define ULTRIUM_POWER_H
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <limine.h>
 
@@ -14,4 +15,10 @@ void power_status(void);
    failure it prints the reason, re-enables interrupts if they were enabled
    and returns so the shell stays usable. */
 void power_shutdown(void);
+
+/* Filesystem synchronization before power-off. `prepare` stops accepting
+   changes, syncs every persistent filesystem and flushes devices; `abort`
+   resumes normal operation after a failed shutdown. */
+struct power_sync_report { size_t volumes, synced; bool ok; };
+void power_set_sync_hooks(void (*prepare)(struct power_sync_report *), void (*abort)(void));
 #endif

@@ -9,3 +9,7 @@ The shell has three command categories:
 A shell prompt (currently `ultrium>`) is not a prefix users must type; it is just a prompt. This design keeps the CLI usable without a desktop or AI.
 
 The `ultrium test` namespace runs kernel diagnostics; see `kernel-testing.md`. Later external programs will require process loading, command arguments, permissions, and executable discovery. Naming collisions will be resolved by prioritizing shell built-ins and reserving the `ultrium` namespace.
+
+## `ultrium storage`
+
+`ultrium storage devices|volumes|format|mount|unmount|sync|info` administer block devices and mounted volumes; see [UltriumFS in the VFS](ultriumfs-vfs.md). `shutdown` and `ultrium system power` are documented in [power management](power-management.md).

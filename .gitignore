@@ -6,3 +6,4 @@
 *.iso
 *.hdd
 /test-images/
+__pycache__/

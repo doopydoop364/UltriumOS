@@ -125,3 +125,7 @@ Milestones: USH 0.1 native commands/compatibility; 0.2 registry/help; 0.3 safe o
 ## USH 0.5 authorization design
 
 `auth` requests temporary action-specific authorization; `as` executes one command under another authorized identity. **Both are planned and unavailable.** No identity-changing command or password prompt exists. The kernel lacks the necessary userspace/process/security boundaries. USH 0.5 denotes the completed architecture milestone, not implemented privilege isolation. See [authorization architecture](authorization-architecture.md) for capability scopes, trusted human approval, agent restrictions, auditing, revocation and kernel prerequisites.
+
+## Storage
+
+The native filesystem verbs work on mounted UltriumFS volumes through the VFS; `info` reports the backing filesystem from the VFS. Storage administration lives under `ultrium storage` (see [UltriumFS in the VFS](ultriumfs-vfs.md)). `remove` semantics are unchanged: it never crosses a mount point, `-r` is required for recursion and `-y` only skips confirmation.

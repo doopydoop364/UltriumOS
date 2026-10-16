@@ -25,8 +25,8 @@ If any step fails, support is "unavailable" with a specific reason shown by `ult
 
 ## Shutdown sequence
 
-1. Print status, mask interrupts (no further input is processed).
-2. Synchronize persistent filesystems and flush block devices. **Currently none exist**; only the volatile RAMFS is mounted, and the command says so. This is the hook for the storage milestones.
+1. Freeze the VFS (no new changes), `sync` every mounted persistent filesystem and flush its block device. If any sync fails the shutdown is **aborted** and the shell returns (see `docs/ultriumfs-vfs.md`). With nothing mounted it says there is nothing to synchronize.
+2. Mask interrupts (no further input is processed).
 3. Refuse if `SCI_EN` is clear. The kernel does not enable ACPI through the SMI command port, because that was not verified.
 4. Write `SLP_EN | SLP_TYP<<10` to PM1a (and PM1b if present).
 5. If the platform does not power off within a bounded spin, print failure, restore the interrupt flag and return to the shell.

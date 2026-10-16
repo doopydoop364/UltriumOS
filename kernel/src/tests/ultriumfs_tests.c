@@ -6,6 +6,9 @@
 #include "storage/block.h"
 #include "memory/pmm.h"
 #include "memory.h"
+#include "fs/vfs.h"
+#include "ush.h"
+#include "storage/storage_ops.h"
 
 /* UltriumFS tests call the backend operations directly on memory-backed block
    devices (no VFS mount). Corruption cases craft on-disk bytes with an
@@ -558,6 +561,177 @@ static const char *ufs_device_removal(void) {
     return teardown(0);
 }
 
+
+/* ---- VFS mounts through the public API and real shell commands ---- */
+static uint8_t mount_buffer[2048];
+static uint64_t mount_frames;
+
+static enum vfs_error vfs_put(const char *path, const void *data, size_t length) {
+    enum vfs_error e = vfs_create_file(path);
+    if (e != VFS_OK) return e;
+    struct vfs_file f = {0}; size_t n = 0;
+    e = vfs_file_open(path, VFS_OPEN_WRITE, &f);
+    if (e == VFS_OK) e = vfs_file_write(&f, data, length, &n);
+    if (f.generation) { enum vfs_error c = vfs_file_close(&f); if (e == VFS_OK) e = c; }
+    return e == VFS_OK && n != length ? VFS_NO_SPACE : e;
+}
+static enum vfs_error vfs_put_big(const char *path, size_t total) {
+    enum vfs_error e = vfs_create_file(path);
+    if (e != VFS_OK) return e;
+    struct vfs_file f = {0};
+    e = vfs_file_open(path, VFS_OPEN_WRITE, &f);
+    memset(mount_buffer, 0x42, sizeof(mount_buffer));
+    for (size_t done = 0; e == VFS_OK && done < total; ) {
+        size_t chunk = total - done < sizeof(mount_buffer) ? total - done : sizeof(mount_buffer), n = 0;
+        e = vfs_file_write(&f, mount_buffer, chunk, &n);
+        if (e == VFS_OK && n != chunk) e = VFS_NO_SPACE;
+        done += chunk;
+    }
+    if (f.generation) { enum vfs_error c = vfs_file_close(&f); if (e == VFS_OK) e = c; }
+    return e;
+}
+static bool vfs_has(const char *path, const char *text) {
+    struct vfs_file f = {0}; size_t n = 0, len = 0;
+    while (text[len]) ++len;
+    if (vfs_file_open(path, VFS_OPEN_READ, &f) != VFS_OK) return false;
+    enum vfs_error e = vfs_file_read(&f, mount_buffer, sizeof(mount_buffer), &n);
+    (void)vfs_file_close(&f);
+    return e == VFS_OK && n == len && !memcmp(mount_buffer, text, len);
+}
+static const char *mount_setup(void) {
+    mount_frames = pmm_free_pages();
+    (void)ush_execute("go /");
+    if (vfs_create_directory("/volumes") != VFS_OK || vfs_create_directory("/volumes/disk") != VFS_OK) return "RAMFS mount-point setup failed";
+    dev = block_memory_create("ufst", 512, 16384, false);
+    if (!dev) return "memory device creation failed";
+    if (ush_execute("ultrium storage format ufst -y") != USH_OK) return "storage format command failed";
+    if (ush_execute("ultrium storage mount ufst /volumes/disk") != USH_OK) return "storage mount command failed";
+    return 0;
+}
+static const char *mount_cleanup(const char *result) {
+    (void)ush_execute("go /");
+    struct vfs_mount_info info;
+    vfs_freeze(false);
+    for (size_t i = 0; vfs_mount_info_at(i, &info); ++i)
+        if (info.persistent) { (void)vfs_unmount(info.path); break; }
+    if (ufs_mounted()) ufs_test_abandon();
+    if (dev) { dev->flags &= ~BLOCK_FLAG_DEAD; if (!block_memory_destroy(dev) && !result) result = "device destroy failed"; dev = 0; }
+    struct vfs_remove_report report;
+    (void)vfs_remove_tree("/volumes", &report);
+    (void)vfs_remove_tree("/rf", &report);
+    (void)vfs_remove_tree("/full", &report);
+    if (!result && pmm_free_pages() != mount_frames) result = "frame accounting changed";
+    return result;
+}
+#define MSETUP() do { const char *s_ = mount_setup(); if (s_) return mount_cleanup(s_); } while (0)
+#define MCHECK(cond, text) do { if (!(cond)) return mount_cleanup(text); } while (0)
+
+static const char *vfs_mount_routing(void) {
+    MSETUP();
+    struct vfs_info st;
+    MCHECK(vfs_stat("/volumes/disk", &st) == VFS_OK && st.type == VFS_NODE_DIRECTORY && st.persistent && st.filesystem && st.filesystem[0] == 'U', "mount point not served by UltriumFS");
+    MCHECK(vfs_stat("/volumes", &st) == VFS_OK && !st.persistent && st.filesystem[0] == 'R', "parent folder not served by RAMFS");
+    /* The spec's example commands, unchanged, on the mounted volume. */
+    MCHECK(ush_execute("go /volumes/disk") == USH_OK, "go failed");
+    MCHECK(ush_execute("new folder projects") == USH_OK && ush_execute("new file notes.txt") == USH_OK, "new failed");
+    MCHECK(ush_execute("write notes2.txt \"Persistent data\"") == USH_OK, "write failed");
+    MCHECK(ush_execute("list /volumes/disk") == USH_OK && ush_execute("view notes2.txt") == USH_OK, "list/view failed");
+    MCHECK(vfs_has("/volumes/disk/notes2.txt", "Persistent data"), "written text not stored on the volume");
+    MCHECK(ush_execute("copy notes2.txt backup.txt") == USH_OK && vfs_has("/volumes/disk/backup.txt", "Persistent data"), "copy on volume failed");
+    MCHECK(ush_execute("rename backup.txt old-notes.txt") == USH_OK && vfs_has("/volumes/disk/old-notes.txt", "Persistent data"), "rename on volume failed");
+    MCHECK(ush_execute("remove old-notes.txt") == USH_OK && vfs_stat("/volumes/disk/old-notes.txt", &st) == VFS_NOT_FOUND, "remove on volume failed");
+    MCHECK(ush_execute("info notes2.txt") == USH_OK, "info failed");
+    MCHECK(ush_execute("new folder a/b") == USH_FS_ERROR, "mkdir under a missing parent accepted");
+    MCHECK(ush_execute("go /") == USH_OK, "go / failed");
+    /* Cross-filesystem copy in both directions; cross-mount rename refused. */
+    MCHECK(vfs_put("/rf", "ram data", 8) == VFS_OK, "RAMFS write failed");
+    MCHECK(ush_execute("copy /rf /volumes/disk/from-ram") == USH_OK && vfs_has("/volumes/disk/from-ram", "ram data"), "RAMFS to disk copy failed");
+    MCHECK(ush_execute("copy /volumes/disk/notes2.txt /from-disk") == USH_OK && vfs_has("/from-disk", "Persistent data"), "disk to RAMFS copy failed");
+    MCHECK(vfs_unlink("/from-disk") == VFS_OK, "cleanup failed");
+    MCHECK(vfs_rename("/rf", "/volumes/disk/moved") == VFS_UNSUPPORTED && vfs_has("/rf", "ram data"), "cross-mount rename not refused cleanly");
+    MCHECK(ush_execute("copy /rf /volumes/disk/from-ram") == USH_FS_ERROR, "copy over an existing file accepted");
+    MCHECK(vfs_copy("/volumes/disk/projects", "/volumes/disk/p2") == VFS_IS_DIRECTORY, "directory copy accepted");
+    /* A copy that cannot fit must not leave a partial destination. */
+    MCHECK(vfs_put_big("/volumes/disk/large", 100000) == VFS_OK, "large file write failed");
+    MCHECK(vfs_copy("/volumes/disk/large", "/toolarge") != VFS_OK && vfs_stat("/toolarge", &st) == VFS_NOT_FOUND, "oversized cross-mount copy left a partial file");
+    MCHECK(vfs_mount_count() == 2, "mount table wrong");
+    return mount_cleanup(0);
+}
+
+static const char *vfs_mount_protection(void) {
+    MSETUP();
+    struct vfs_remove_report report;
+    MCHECK(vfs_create_file("/volumes/disk/keep") == VFS_OK, "setup failed");
+    MCHECK(vfs_unlink("/volumes/disk") == VFS_BUSY && vfs_unlink("/volumes") == VFS_BUSY, "mount point or ancestor unlinked");
+    MCHECK(vfs_rename("/volumes", "/vols") == VFS_BUSY && vfs_rename("/volumes/disk", "/x") == VFS_BUSY, "mount point or ancestor renamed");
+    MCHECK(vfs_remove_tree("/volumes", &report) == VFS_BUSY && vfs_stat("/volumes/disk/keep", &(struct vfs_info){0}) == VFS_OK, "recursive removal crossed a mount point");
+    MCHECK(vfs_remove_tree("/volumes/disk", &report) == VFS_BUSY && report.removed == 0, "recursive removal of a mount point accepted");
+    MCHECK(ush_execute("remove /volumes -r -y") == USH_FS_ERROR && ush_execute("remove /volumes/disk -r -y") == USH_FS_ERROR, "shell removal crossed a mount point");
+    MCHECK(vfs_has("/volumes/disk/keep", "") || vfs_stat("/volumes/disk/keep", &(struct vfs_info){0}) == VFS_OK, "volume content lost");
+    /* Mount-point policy. */
+    MCHECK(vfs_create_directory("/full") == VFS_OK && vfs_create_file("/full/x") == VFS_OK, "setup failed");
+    MCHECK(vfs_mount("/full", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_NOT_EMPTY, "mount over a non-empty folder accepted");
+    MCHECK(vfs_mount("/missing", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_NOT_FOUND, "mount at a missing path accepted");
+    MCHECK(vfs_mount("/full/x", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_NOT_DIRECTORY, "mount on a file accepted");
+    MCHECK(vfs_mount("/", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_INVALID_PATH, "mount over the root accepted");
+    MCHECK(vfs_mount("/volumes/disk", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_BUSY, "double mount accepted");
+    MCHECK(vfs_mount("/volumes/disk/inner", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_BUSY, "nested mount accepted");
+    MCHECK(vfs_mount("/volumes", ufs_backend(), 0, "UltriumFS", "ufst", true, false) == VFS_BUSY, "mount over an ancestor of a mount accepted");
+    MCHECK(ush_execute("ultrium storage mount ufst /full") == USH_FS_ERROR, "second volume mount via the command accepted");
+    MCHECK(vfs_mount_count() == 2, "failed mounts changed the mount table");
+    MCHECK(ush_execute("ultrium storage format ufst -y") == USH_FS_ERROR, "mounted volume was formatted");
+    MCHECK(ush_execute("ultrium storage format nosuch -y") == USH_FS_ERROR, "format of a missing device accepted");
+    return mount_cleanup(0);
+}
+
+static const char *vfs_mount_unmount_cycle(void) {
+    MSETUP();
+    MCHECK(ush_execute("new folder /volumes/disk/projects") == USH_OK &&
+           ush_execute("write /volumes/disk/projects/notes.txt Persistent") == USH_OK &&
+           vfs_put("/rf", "ram", 3) == VFS_OK, "setup failed");
+    /* Handles route to the right backend, concurrently. */
+    struct vfs_file disk = {0}, ram = {0}; size_t n;
+    MCHECK(vfs_file_open("/volumes/disk/projects/notes.txt", VFS_OPEN_READ, &disk) == VFS_OK && vfs_file_open("/rf", VFS_OPEN_READ, &ram) == VFS_OK, "open failed");
+    MCHECK(vfs_file_read(&disk, mount_buffer, 64, &n) == VFS_OK && n == 10 && !memcmp(mount_buffer, "Persistent", 10), "disk handle routed wrongly");
+    MCHECK(vfs_file_read(&ram, mount_buffer, 64, &n) == VFS_OK && n == 3 && !memcmp(mount_buffer, "ram", 3), "RAMFS handle routed wrongly");
+    MCHECK(vfs_unmount("/volumes/disk") == VFS_BUSY && ush_execute("ultrium storage unmount /volumes/disk") == USH_FS_ERROR, "unmount with an open file accepted");
+    MCHECK(vfs_file_close(&disk) == VFS_OK && vfs_file_close(&disk) == VFS_BAD_HANDLE && vfs_file_close(&ram) == VFS_OK, "close routing wrong");
+    /* The current folder pins the volume. */
+    MCHECK(ush_execute("go /volumes/disk/projects") == USH_OK, "go failed");
+    MCHECK(ush_execute("ultrium storage unmount /volumes/disk") == USH_FS_ERROR && vfs_mount_count() == 2, "unmount with the cwd inside accepted");
+    MCHECK(ush_execute("go /") == USH_OK, "go / failed");
+    MCHECK(ush_execute("ultrium storage unmount /rf") == USH_FS_ERROR && ush_execute("ultrium storage unmount /volumes/nothing") != USH_OK, "unmount of a non-mount accepted");
+    /* Freeze (shutdown): reads continue, changes are refused. */
+    vfs_freeze(true);
+    MCHECK(vfs_create_file("/volumes/disk/frozen") == VFS_BUSY && vfs_create_file("/frozen") == VFS_BUSY, "frozen VFS accepted a create");
+    MCHECK(vfs_has("/volumes/disk/projects/notes.txt", "Persistent"), "frozen VFS blocked a read");
+    MCHECK(vfs_file_open("/rf", VFS_OPEN_WRITE, &ram) == VFS_BUSY, "frozen VFS accepted a write open");
+    vfs_freeze(false);
+    /* Shutdown synchronization success and failure. */
+    size_t volumes = 0, synced = 0;
+    MCHECK(storage_shutdown_sync(&volumes, &synced) && volumes == 1 && synced == 1, "shutdown sync did not synchronize the volume");
+    MCHECK(vfs_frozen() && vfs_create_file("/after-sync") == VFS_BUSY, "shutdown sync did not stop new changes");
+    storage_shutdown_abort();
+    MCHECK(!vfs_frozen() && vfs_create_file("/volumes/disk/extra") == VFS_OK, "abort did not resume operation");
+    dev->flags |= BLOCK_FLAG_DEAD;
+    MCHECK(!storage_shutdown_sync(&volumes, &synced) && synced == 0, "shutdown sync claimed success on a dead device");
+    storage_shutdown_abort();
+    dev->flags &= ~BLOCK_FLAG_DEAD;
+    MCHECK(ush_execute("ultrium storage sync") == USH_OK, "sync command failed");
+    /* Unmount, RAMFS unaffected, remount, data persisted on the device. */
+    MCHECK(ush_execute("ultrium storage unmount /volumes/disk") == USH_OK && vfs_mount_count() == 1, "unmount failed");
+    MCHECK(ufs_mounted() == false && dev->holders == 0, "unmount did not release the volume");
+    MCHECK(vfs_has("/rf", "ram") && vfs_stat("/volumes/disk", &(struct vfs_info){0}) == VFS_OK, "RAMFS state damaged by unmount");
+    MCHECK(vfs_stat("/volumes/disk/projects", &(struct vfs_info){0}) == VFS_NOT_FOUND, "volume content visible after unmount");
+    MCHECK(ush_execute("ultrium storage mount ufst /volumes/disk -r") == USH_OK, "remount failed");
+    MCHECK(vfs_has("/volumes/disk/projects/notes.txt", "Persistent"), "data lost across unmount and remount");
+    MCHECK(vfs_create_file("/volumes/disk/nope") == VFS_READ_ONLY, "read-only mount accepted a create");
+    MCHECK(ush_execute("ultrium storage volumes") == USH_OK && ush_execute("ultrium storage info /volumes/disk") == USH_OK &&
+           ush_execute("ultrium storage info /") == USH_OK, "volumes/info failed");
+    MCHECK(ush_execute("ultrium storage unmount /volumes/disk") == USH_OK, "second unmount failed");
+    return mount_cleanup(0);
+}
+
 const struct test_case ultriumfs_cases[] = {
     {"ultriumfs format and mount", ufs_format_mount},
     {"ultriumfs format safety", ufs_format_safety},
@@ -575,6 +749,9 @@ const struct test_case ultriumfs_cases[] = {
     {"ultriumfs injected device failures", ufs_failure_injection},
     {"ultriumfs allocation rollback", ufs_allocation_rollback},
     {"ultriumfs growth rollback on I/O error", ufs_growth_rollback_on_io_error},
-    {"ultriumfs device removal", ufs_device_removal}
+    {"ultriumfs device removal", ufs_device_removal},
+    {"vfs mount routing and shell commands", vfs_mount_routing},
+    {"vfs mount protection and policy", vfs_mount_protection},
+    {"vfs unmount, handles, freeze, shutdown sync", vfs_mount_unmount_cycle}
 };
 const size_t ultriumfs_case_count = sizeof(ultriumfs_cases) / sizeof(ultriumfs_cases[0]);

@@ -69,6 +69,7 @@ static void hcf(void) {
 #include "pci/pci.h"
 #include "storage/block.h"
 #include "storage/virtio_blk.h"
+#include "storage/storage_ops.h"
 #include "keyboard/keyboard.h"
 #include "version.h"
 
@@ -112,6 +113,7 @@ void kmain(void) {
         hcf();
     }
     terminal_write("RAM FILESYSTEM READY\n");
+    storage_register_power_hook();
     pci_init();
     size_t block_devices = virtio_blk_probe();
     terminal_write(block_devices ? "VIRTIO BLOCK DEVICE READY\n" : "NO BLOCK DEVICE (DISKLESS BOOT)\n");
