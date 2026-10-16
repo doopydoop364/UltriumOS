@@ -1102,6 +1102,13 @@ void kernel_tests_interrupts(void) { run(interrupt_cases, sizeof(interrupt_cases
 void kernel_tests_filesystem(void) { run(filesystem_cases, sizeof(filesystem_cases)/sizeof(filesystem_cases[0])); }
 void kernel_tests_storage(void) { run(storage_cases, storage_case_count); }
 void kernel_tests_ultriumfs(void) { run(ultriumfs_cases, ultriumfs_case_count); }
+void kernel_tests_persist_blank(void) { run(persist_blank_cases, persist_blank_count); }
+void kernel_tests_persist_populate(void) { run(persist_populate_cases, persist_populate_count); }
+void kernel_tests_persist_stage1(void) { run(persist_stage1_cases, persist_stage1_count); }
+void kernel_tests_persist_modify(void) { run(persist_modify_cases, persist_modify_count); }
+void kernel_tests_persist_stage3(void) { run(persist_stage3_cases, persist_stage3_count); }
+void kernel_tests_persist_clean(void) { run(persist_clean_cases, persist_clean_count); }
+void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
