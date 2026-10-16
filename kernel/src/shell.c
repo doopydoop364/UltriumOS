@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include "shell.h"
+#include "scheduler/scheduler.h"
 #include "keyboard/keyboard.h"
 #include "terminal/terminal.h"
 #include "system/reboot.h"
@@ -187,6 +188,7 @@ static const struct ush_command registry[] = {
     B("v1verify","ultrium test persist","Verify a v1 volume mounted read-only",kernel_tests_persist_v1verify),
     B("ufs2","ultrium test","UltriumFS 2 journal and crash-recovery tests",kernel_tests_ufs2),
     B("tasks","ultrium test","Kernel task context-switching tests",kernel_tests_tasks),
+    B("scheduler","ultrium test","Scheduler tests (preemption, yield, block, sleep, exit)",kernel_tests_scheduler),
     B("ufs2fs","ultrium test","UltriumFS 2 filesystem tests",kernel_tests_ufs2fs),
     B("ufs2crash","ultrium test","UltriumFS 2 recovery matrix (power cut at every I/O event; slow, not in 'all')",kernel_tests_ufs2crash),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
@@ -513,7 +515,7 @@ void shell_run(void) {
     terminal_cursor(1);
     for (;;) {
         int key = keyboard_poll();
-        if (!key) continue;
+        if (!key) { sched_idle_wait(); continue; }
         terminal_cursor(0);
         if (key != '\t') tab_again = false;
         if (key == KEY_CTRL_C) {

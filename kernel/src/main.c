@@ -63,6 +63,7 @@ static void hcf(void) {
 #include "memory/vmm.h"
 #include "memory/heap.h"
 #include "scheduler/task.h"
+#include "scheduler/scheduler.h"
 #include "fs/vfs.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
@@ -109,7 +110,7 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
-    terminal_write(task_system_init() ? "TASK SYSTEM READY\n" : "TASK SYSTEM UNAVAILABLE\n");
+    terminal_write(task_system_init() && sched_init() ? "TASK SYSTEM AND SCHEDULER READY\n" : "TASK SYSTEM UNAVAILABLE\n");
     if (!vfs_init()) {
         terminal_write_color("RAM FILESYSTEM INIT FAILED\n", TERMINAL_MUTED);
         hcf();
@@ -121,6 +122,7 @@ void kmain(void) {
     terminal_write(block_devices ? "VIRTIO BLOCK DEVICE READY\n" : "NO BLOCK DEVICE (DISKLESS BOOT)\n");
     if (interrupts_init()) {
         terminal_write("LOCAL APIC, IOAPIC AND 100 HZ TIMER READY\n");
+        interrupts_set_tick_hook(sched_tick);
         if (keyboard_init_interrupts())
             terminal_write("PS/2 KEYBOARD IRQ INPUT READY\n");
         else
