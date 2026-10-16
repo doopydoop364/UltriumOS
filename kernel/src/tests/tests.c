@@ -1113,6 +1113,10 @@ void kernel_tests_persist_v1verify(void) { run(persist_v1verify_cases, persist_v
 void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
 void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
+void kernel_tests_ufs2crash(void) {
+    run(ufs2_crash_cases, ufs2_crash_case_count);
+    report("CRASH MATRIX RUNS "); report_number(ufs2_crash_total_runs()); report("\n");
+}
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {

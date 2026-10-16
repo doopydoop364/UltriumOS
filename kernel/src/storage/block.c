@@ -5,6 +5,7 @@
 #include "memory/heap.h"
 
 static struct block_device *registry[BLOCK_MAX_DEVICES];
+static bool power_is_cut;
 static int32_t injected_after = -1;
 
 void block_test_fail_after(int32_t n) { injected_after = n; }
@@ -113,6 +114,7 @@ bool block_register_window(struct block_device *w, struct block_device *parent, 
 
 static enum block_error validate(struct block_device *d, uint64_t first, uint64_t count,
                                  const void *buffer, size_t buffer_size, bool write) {
+    if (power_is_cut) return BLOCK_IO;
     if (!d || !d->registered || !in_registry(d)) return BLOCK_NO_DEVICE;
     if (d->parent && (d->parent->flags & BLOCK_FLAG_DEAD)) return BLOCK_NO_DEVICE;
     if (d->flags & BLOCK_FLAG_DEAD) return BLOCK_NO_DEVICE;
@@ -155,6 +157,7 @@ enum block_error block_write(struct block_device *d, uint64_t first, uint64_t co
     return BLOCK_OK;
 }
 enum block_error block_flush(struct block_device *d) {
+    if (power_is_cut) return BLOCK_IO;
     if (!d || !d->registered || !in_registry(d) || (d->flags & BLOCK_FLAG_DEAD) ||
         (d->parent && (d->parent->flags & BLOCK_FLAG_DEAD))) return BLOCK_NO_DEVICE;
     if (d->flags & BLOCK_FLAG_READ_ONLY) return BLOCK_READ_ONLY;
@@ -199,11 +202,28 @@ struct memory_block {
     int64_t crash_at;                   /* event index to crash at, -1 = never */
     uint64_t events;                    /* writes and flushes executed since reset */
     const char *crash_phase;
+    /* snapshot/restore: blocks written since the snapshot are copied back */
+    uint8_t *snap, *dirty;
 };
 static struct memory_block memory_devices[2];
 static const char *current_phase = "";
-void block_set_phase(const char *phase) { current_phase = phase ? phase : ""; }
+static const char *armed_phase;
+static int armed_remaining;
+static void (*cut_hook)(const char *phase);
+static bool phase_equal(const char *a, const char *b) { while (*a && *a == *b) { ++a; ++b; } return *a == *b; }
+void block_set_phase(const char *phase) {
+    current_phase = phase ? phase : "";
+    if (armed_phase && !power_is_cut && phase_equal(current_phase, armed_phase) && --armed_remaining <= 0) {
+        power_is_cut = true;                      /* every later transfer or flush fails: power was lost before this phase's first I/O */
+        if (cut_hook) cut_hook(current_phase);
+    }
+}
 const char *block_get_phase(void) { return current_phase; }
+void block_arm_power_cut(const char *phase, int occurrence, void (*hook)(const char *phase)) {
+    armed_phase = phase; armed_remaining = occurrence < 1 ? 1 : occurrence; power_is_cut = false; cut_hook = hook;
+}
+void block_restore_power(void) { armed_phase = 0; power_is_cut = false; cut_hook = 0; }
+bool block_power_is_cut(void) { return power_is_cut; }
 
 /* Returns true when this event must not execute (power already cut or cut now). */
 static bool memory_event_blocked(struct memory_block *m) {
@@ -241,6 +261,7 @@ static enum block_error memory_write(struct block_device *d, uint64_t block, con
         }
     }
     for (uint32_t i = 0; i < d->block_size; ++i) target[i] = ((const uint8_t *)buffer)[i];
+    if (m->dirty) m->dirty[block >> 3] |= (uint8_t)(1U << (block & 7));
     return BLOCK_OK;
 }
 static enum block_error memory_flush(struct block_device *d) {
@@ -307,6 +328,26 @@ void block_memory_power_cycle(struct block_device *d, enum block_power_policy po
     }
     m->crashed = false; m->crash_at = -1; m->events = 0;
 }
+bool block_memory_snapshot(struct block_device *d) {
+    struct memory_block *m = memory_of(d);
+    if (!m || m->snap) return false;
+    m->snap = vmm_alloc_pages((size_t)((m->bytes + 4095) / 4096));
+    m->dirty = vmm_alloc_pages((size_t)((d->block_count / 8 + 4096) / 4096));
+    if (!m->snap || !m->dirty) { if (m->snap) vmm_free_pages(m->snap); if (m->dirty) vmm_free_pages(m->dirty); m->snap = m->dirty = 0; return false; }
+    for (uint64_t i = 0; i < m->bytes; ++i) m->snap[i] = m->data[i];
+    return true;
+}
+void block_memory_restore(struct block_device *d) {
+    struct memory_block *m = memory_of(d);
+    if (!m || !m->snap) return;
+    uint32_t bs = d->block_size;
+    for (uint64_t b = 0; b < d->block_count; ++b) {
+        if (!(m->dirty[b >> 3] & (1U << (b & 7)))) continue;
+        for (uint32_t i = 0; i < bs; ++i) m->data[b * bs + i] = m->snap[b * bs + i];
+        m->dirty[b >> 3] &= (uint8_t)~(1U << (b & 7));
+    }
+    m->pending_count = 0; m->crashed = false; m->crash_at = -1; m->events = 0;
+}
 bool block_memory_copy(struct block_device *to, struct block_device *from) {
     struct memory_block *a = memory_of(to), *b = memory_of(from);
     if (!a || !b || a == b || a->bytes != b->bytes || to->block_size != from->block_size) return false;
@@ -325,6 +366,7 @@ struct block_device *block_memory_create(const char *name, uint32_t block_size,
     m->data = vmm_alloc_pages((size_t)((bytes + 4095) / 4096));
     if (!m->data) return 0;
     m->bytes = bytes;
+    m->snap = m->dirty = 0;
     m->cache = false; m->undo = 0; m->pending_count = 0; m->crashed = false; m->crash_at = -1; m->events = 0; m->crash_phase = "";
     m->device = (struct block_device){0};
     copy_name(m->device.name, name ? name : "");
@@ -345,8 +387,10 @@ bool block_memory_destroy(struct block_device *d) {
         if (!block_unregister(d)) return false;
         bool freed = vmm_free_pages(m->data);
         if (m->undo) freed = vmm_free_pages(m->undo) && freed;
+        if (m->snap) freed = vmm_free_pages(m->snap) && freed;
+        if (m->dirty) freed = vmm_free_pages(m->dirty) && freed;
         if (!freed) return false;
-        m->data = 0; m->undo = 0; m->cache = false; m->device = (struct block_device){0};
+        m->data = 0; m->undo = 0; m->snap = m->dirty = 0; m->cache = false; m->device = (struct block_device){0};
         return true;
     }
     return false;

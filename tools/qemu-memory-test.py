@@ -27,13 +27,14 @@ def main():
         "ultrium test ultriumfs": 20,
         "ultrium test ufs2": 16,
         "ultrium test ufs2fs": 29,
+        "ultrium test ufs2crash": 4,
         "ultrium test storage": 7,
         "ultrium test shell": 7,
     }.get(command_text)
     if not keyboard_regression and not shell_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
             "ultrium test filesystem", "ultrium test shell",
-            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs",
+            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
@@ -94,8 +95,10 @@ def main():
             selector.register(process.stdout, selectors.EVENT_READ)
             output = bytearray()
 
+            slow = command_text == "ultrium test ufs2crash"  # recovery matrix: one long run
+
             def wait_for_summary(summary, count):
-                deadline = time.monotonic() + 30
+                deadline = time.monotonic() + (1800 if slow else 30)
                 while output.decode(errors="replace").count(summary) < count and time.monotonic() < deadline:
                     for key, _ in selector.select(.5):
                         chunk = os.read(key.fileobj.fileno(), 4096)
@@ -252,13 +255,17 @@ def main():
             expected = "TEST SUMMARY passed=" + str(expected_count) + " failed=0"
             # Repeat in one boot so allocator accounting and ownership cleanup
             # are checked against the prior run's resulting state.
-            for repetition in range(2):
+            for repetition in range(1 if slow else 2):
                 type_text(command_text)
                 send_key("ret")
                 wait_for_summary(expected, repetition + 1)
+            if slow:
+                wait_for_summary("CRASH MATRIX RUNS", 1)
+                time.sleep(1)
+                output.extend(os.read(process.stdout.fileno(), 65536) if selector.select(.5) else b"")
             decoded = output.decode(errors="replace")
             print(decoded, end="")
-            if decoded.count(expected) != 2:
+            if decoded.count(expected) != (1 if slow else 2):
                 raise RuntimeError("expected two passing memory-test summaries on COM1")
             return 0
         finally:

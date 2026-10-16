@@ -107,6 +107,16 @@ bool block_memory_crashed(struct block_device *device);
 const char *block_memory_crash_phase(struct block_device *device);
 uint32_t block_memory_pending(struct block_device *device);
 bool block_memory_copy(struct block_device *to, struct block_device *from);
+/* Fast reset for matrix tests: take a snapshot once, then restore only the blocks written since. */
+bool block_memory_snapshot(struct block_device *device);
+void block_memory_restore(struct block_device *device);
+
+/* Deterministic power cut for runs on real devices (QEMU): when the `occurrence`-th
+   block_set_phase(phase) call happens, every later transfer or flush on every device
+   fails with BLOCK_IO and `hook` runs once. The cut is global until block_restore_power(). */
+void block_arm_power_cut(const char *phase, int occurrence, void (*hook)(const char *phase));
+void block_restore_power(void);
+bool block_power_is_cut(void);
 /* Label of the I/O phase in progress; recorded when a crash point fires. */
 void block_set_phase(const char *phase);
 const char *block_get_phase(void);
