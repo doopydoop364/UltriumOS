@@ -111,7 +111,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | Milestone | PR / branch | Status |
 | --- | --- | --- |
 | Process and thread model specification | `feature/process-model` | this document |
-| Context switching | `feature/context-switching` | not started |
+| Context switching | `feature/context-switching` | **implemented, QEMU-tested**: task table, 16 KiB kernel stacks with canary, register-level `task_switch_to`, TSS.RSP0 update, cooperative only (`ultrium test tasks`, 3 cases). No queues or preemption yet |
 | Scheduler | `feature/scheduler` | not started |
 | Per-process address spaces | `feature/user-address-spaces` | not started |
 | Ring 3 execution | `feature/ring3` | not started |

@@ -186,6 +186,7 @@ static const struct ush_command registry[] = {
     B("v1fixture","ultrium test persist","Build an UltriumFS 1 volume (explicit v1 format)",kernel_tests_persist_v1fixture),
     B("v1verify","ultrium test persist","Verify a v1 volume mounted read-only",kernel_tests_persist_v1verify),
     B("ufs2","ultrium test","UltriumFS 2 journal and crash-recovery tests",kernel_tests_ufs2),
+    B("tasks","ultrium test","Kernel task context-switching tests",kernel_tests_tasks),
     B("ufs2fs","ultrium test","UltriumFS 2 filesystem tests",kernel_tests_ufs2fs),
     B("ufs2crash","ultrium test","UltriumFS 2 recovery matrix (power cut at every I/O event; slow, not in 'all')",kernel_tests_ufs2crash),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),

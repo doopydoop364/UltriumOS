@@ -357,3 +357,5 @@ bool exceptions_install_irq_gate(unsigned vector, void (*handler)(void)) {
         (uint16_t)(p >> 16), (uint32_t)(p >> 32), 0};
     return true;
 }
+void exceptions_set_kernel_stack(uint64_t top) { tss.rsp0 = top; }
+uint64_t exceptions_kernel_stack(void) { return tss.rsp0; }
