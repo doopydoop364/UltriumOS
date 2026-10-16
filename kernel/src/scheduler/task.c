@@ -12,6 +12,7 @@ static struct task *current;
 static uint32_t next_tid = 1;
 static bool ready;
 static void (*exit_handler)(void);
+static void (*post_switch)(void);
 
 /* ultrium_switch(uint64_t *save_rsp, uint64_t new_rsp): the callee-saved registers,
    rflags and the return address live on the stacks; everything else is saved by the
@@ -39,7 +40,7 @@ extern void ultrium_task_trampoline(void);
 __attribute__((noreturn)) void ultrium_task_main(void) {
     task_finish_switch();
     struct task *self = current;
-    __asm__ volatile("sti" ::: "memory");
+    __asm__ volatile("sti" ::: "memory");   /* new tasks start with interrupts enabled */
     if (self->entry) self->entry(self->arg);
     __asm__ volatile("cli" ::: "memory");
     if (exit_handler) exit_handler();
@@ -47,6 +48,7 @@ __attribute__((noreturn)) void ultrium_task_main(void) {
 }
 
 void task_set_exit_handler(void (*handler)(void)) { exit_handler = handler; }
+void task_set_post_switch_hook(void (*hook)(void)) { post_switch = hook; }
 
 static void copy_name(char *out, const char *name) {
     size_t i = 0;
@@ -73,9 +75,21 @@ struct task *task_by_tid(uint32_t tid) {
         if (tasks[i].state != TASK_UNUSED && tasks[i].tid == tid) return &tasks[i];
     return NULL;
 }
+struct task *task_first(void) { return task_next(NULL); }
+struct task *task_next(const struct task *after) {
+    unsigned i = after ? (unsigned)(after - tasks) + 1 : 0;
+    for (; i < TASK_MAX; ++i) if (tasks[i].state != TASK_UNUSED) return &tasks[i];
+    return NULL;
+}
 unsigned task_count_live(void) {
     unsigned n = 0;
     for (unsigned i = 0; i < TASK_MAX; ++i) if (tasks[i].state != TASK_UNUSED) ++n;
+    return n;
+}
+
+unsigned task_stack_allocations(void) {
+    unsigned n = 0;
+    for (unsigned i = 0; i < TASK_MAX; ++i) if (tasks[i].state != TASK_UNUSED && tasks[i].stack_base) ++n;
     return n;
 }
 
@@ -120,6 +134,7 @@ void task_finish_switch(void) {
     /* Runs on the incoming task's stack. */
     if (current->stack_top) exceptions_set_kernel_stack(current->stack_top);
     ++current->switches_in;
+    if (post_switch) post_switch();
 }
 
 void task_switch_to(struct task *next) {
@@ -134,4 +149,5 @@ void task_switch_to(struct task *next) {
     ultrium_switch(&prev->saved_rsp, next->saved_rsp);
     /* Back in `prev`, switched in again. */
     ++prev->switches_in;
+    if (post_switch) post_switch();
 }

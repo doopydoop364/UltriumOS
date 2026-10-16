@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "tests.h"
 #include "tests_internal.h"
+#include "scheduler/task.h"
 #include "terminal/terminal.h"
 #include "memory/pmm.h"
 #include "memory/heap.h"
@@ -236,10 +237,13 @@ static bool same_region_stats(const struct vmm_region_stats *a,
 
 static const char *region_allocations(void) {
     struct vmm_region_stats baseline, current;
+    /* Live kernel tasks (idle, test tasks) keep their stacks in the region; everything else must be free. */
+    const uint64_t resident_pages = (uint64_t)task_stack_allocations() * TASK_KSTACK_PAGES;
+    const unsigned resident_records = task_stack_allocations();
     if (!vmm_region_stats_get(&baseline) || vmm_region_stats_get(0) ||
-        baseline.reserved_virtual_pages ||
-        baseline.mapped_virtual_pages || baseline.owned_backing_pages)
-        return "region allocator did not start empty";
+        baseline.reserved_virtual_pages != resident_pages ||
+        baseline.mapped_virtual_pages != resident_pages || baseline.owned_backing_pages != resident_pages)
+        return "region allocator did not start with only the kernel task stacks";
     uint64_t free_frames = pmm_free_pages();
     void *invalid = vmm_alloc_pages(0);
     bool zero_accepted = invalid != 0;
@@ -302,9 +306,9 @@ static const char *region_allocations(void) {
         vmm_free_pages(single); vmm_free_pages(multiple);
         return "invalid region free accepted";
     }
-    if (!vmm_region_stats_get(&current) || current.reserved_virtual_pages != 4 ||
-        current.mapped_virtual_pages != 4 || current.owned_backing_pages != 4 ||
-        current.free_virtual_pages != VMM_REGION_MAX_PAGES - 4 ||
+    if (!vmm_region_stats_get(&current) || current.reserved_virtual_pages != resident_pages + 4 ||
+        current.mapped_virtual_pages != resident_pages + 4 || current.owned_backing_pages != resident_pages + 4 ||
+        current.free_virtual_pages != VMM_REGION_MAX_PAGES - resident_pages - 4 ||
         pmm_free_pages() + 4 != free_frames) {
         vmm_free_pages(single); vmm_free_pages(multiple);
         return "region accounting mismatch";
@@ -404,7 +408,7 @@ static const char *region_allocations(void) {
     if (!vmm_region_stats_get(&current) || !same_region_stats(&baseline, &current) ||
         pmm_free_pages() != free_frames) return "PMM failure leaked region ownership";
 
-    void *full = vmm_alloc_pages(VMM_REGION_MAX_PAGES);
+    void *full = vmm_alloc_pages(VMM_REGION_MAX_PAGES - resident_pages);
     if (!full) return "full-window allocation failed";
     void *extra = vmm_alloc_pages(1);
     bool full_stats_ok = !extra && vmm_region_stats_get(&current) &&
@@ -417,7 +421,7 @@ static const char *region_allocations(void) {
         vmm_free_pages(full);
         return "region exhaustion accounting failed";
     }
-    uint8_t *last = (uint8_t *)full + (VMM_REGION_MAX_PAGES - 1U) * 4096U;
+    uint8_t *last = (uint8_t *)full + (VMM_REGION_MAX_PAGES - resident_pages - 1U) * 4096U;
     last[0] = 0x5a; last[4095] = 0xa5;
     bool boundary_ok = last[0] == 0x5a && last[4095] == 0xa5;
     bool full_freed = vmm_free_pages(full);
@@ -428,12 +432,13 @@ static const char *region_allocations(void) {
 
     void *small[64];
     unsigned small_count = 0;
-    while (small_count < 64 && (small[small_count] = vmm_alloc_pages(1)) != 0)
+    const unsigned small_limit = 64U - resident_records;
+    while (small_count < small_limit && (small[small_count] = vmm_alloc_pages(1)) != 0)
         ++small_count;
     void *record_overflow = vmm_alloc_pages(1);
     if (record_overflow) vmm_free_pages(record_overflow);
     for (unsigned i = 0; i < small_count; ++i) vmm_free_pages(small[i]);
-    if (small_count != 64 || record_overflow ||
+    if (small_count != small_limit || record_overflow ||
         !vmm_region_stats_get(&current) || !same_region_stats(&baseline, &current) ||
         pmm_free_pages() != free_frames) return "allocation record exhaustion or reuse failed";
     return 0;
@@ -1121,6 +1126,7 @@ void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoin
 void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
 void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
 void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
+void kernel_tests_scheduler(void) { run(sched_cases, sched_case_count); }
 void kernel_tests_tasks(void) { run(task_cases, task_case_count); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
 void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
@@ -1131,7 +1137,7 @@ void kernel_tests_ufs2crash(void) {
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1141,7 +1147,8 @@ void kernel_tests_all(void) {
         ultriumfs_case_count,
         ufs2_journal_case_count,
         ufs2_fs_case_count,
-        task_case_count
+        task_case_count,
+        sched_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

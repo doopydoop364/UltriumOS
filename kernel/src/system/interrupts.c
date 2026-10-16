@@ -17,6 +17,7 @@ static void (*irq_handlers[IRQ_COUNT])(void);
 static volatile uint32_t *local_apic;
 static volatile uint32_t *io_apic;
 static bool initialized;
+static void (*tick_hook)(bool from_user);
 
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -102,7 +103,7 @@ static bool local_apic_prepare(void) {
     return true;
 }
 
-void ultrium_irq_dispatch(uint64_t vector) {
+void ultrium_irq_dispatch(uint64_t vector, const uint64_t *frame) {
     last_irq_vector = vector;
     if (vector < IRQ_BASE || vector >= IRQ_BASE + IRQ_COUNT) {
         local_apic_eoi();
@@ -110,8 +111,14 @@ void ultrium_irq_dispatch(uint64_t vector) {
     }
     unsigned irq = (unsigned)(vector - IRQ_BASE);
     ++irq_counts[irq];
-    if (irq == 0) ++timer_ticks;
-    else if (irq_handlers[irq]) irq_handlers[irq]();
+    if (irq == 0) {
+        ++timer_ticks;
+        local_apic_eoi();                              /* before a possible task switch, or no further tick could arrive */
+        /* frame[0]=vector, frame[1]=RIP, frame[2]=CS: ring 3 was interrupted when the CS RPL is nonzero. */
+        if (tick_hook) tick_hook((frame[2] & 3) != 0);
+        return;
+    }
+    if (irq_handlers[irq]) irq_handlers[irq]();
     local_apic_eoi();
 }
 
@@ -139,6 +146,7 @@ __asm__(
 "pushq %r12\n" "pushq %r13\n" "pushq %r14\n" "pushq %r15\n"
 "movq %rsp, %r12\n"
 "movq 120(%r12), %rdi\n"
+"leaq 120(%r12), %rsi\n"
 "andq $-16, %rsp\n"
 "call ultrium_irq_dispatch\n"
 "movq %r12, %rsp\n"
@@ -186,6 +194,7 @@ bool interrupts_init(void) {
 }
 
 bool interrupts_ready(void) { return initialized; }
+void interrupts_set_tick_hook(void (*hook)(bool from_user)) { tick_hook = hook; }
 uint64_t interrupts_timer_ticks(void) { return timer_ticks; }
 
 bool interrupts_register_irq_handler(unsigned irq, void (*handler)(void)) {

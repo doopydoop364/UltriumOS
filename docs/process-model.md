@@ -112,7 +112,7 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | --- | --- | --- |
 | Process and thread model specification | `feature/process-model` | this document |
 | Context switching | `feature/context-switching` | **implemented, QEMU-tested**: task table, 16 KiB kernel stacks with canary, register-level `task_switch_to`, TSS.RSP0 update, cooperative only (`ultrium test tasks`, 3 cases). No queues or preemption yet |
-| Scheduler | `feature/scheduler` | not started |
+| Scheduler | `feature/scheduler` | **implemented, QEMU-tested**: round robin, 50 ms slices, yield/block/wake/sleep, idle task, reaper, timer preemption of ring-3 and `PREEMPTIBLE` kernel tasks only (`ultrium test scheduler`, 9 cases). Kernel code is not preemptible. Single CPU only |
 | Per-process address spaces | `feature/user-address-spaces` | not started |
 | Ring 3 execution | `feature/ring3` | not started |
 | System calls | `feature/syscalls` | not started |
