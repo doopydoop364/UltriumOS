@@ -11,6 +11,7 @@ void kernel_tests_storage(void);
 void kernel_tests_ufs2(void);
 void kernel_tests_ufs2fs(void);
 void kernel_tests_ufs2crash(void);
+void kernel_tests_tasks(void);
 void kernel_tests_persist_v2_big(void);
 void kernel_tests_persist_v2_bigverify(void);
 void kernel_tests_persist_v2_cut_dataflush(void);

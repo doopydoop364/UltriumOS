@@ -62,6 +62,7 @@ static void hcf(void) {
 #include "memory/pmm.h"
 #include "memory/vmm.h"
 #include "memory/heap.h"
+#include "scheduler/task.h"
 #include "fs/vfs.h"
 #include "system/exceptions.h"
 #include "system/interrupts.h"
@@ -108,6 +109,7 @@ void kmain(void) {
         hcf();
     }
     terminal_write(heap_self_test() ? "SLAB HEAP SELF TEST PASSED\n" : "SLAB HEAP SELF TEST FAILED\n");
+    terminal_write(task_system_init() ? "TASK SYSTEM READY\n" : "TASK SYSTEM UNAVAILABLE\n");
     if (!vfs_init()) {
         terminal_write_color("RAM FILESYSTEM INIT FAILED\n", TERMINAL_MUTED);
         hcf();
