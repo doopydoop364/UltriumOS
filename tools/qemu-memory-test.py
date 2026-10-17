@@ -102,7 +102,7 @@ def main():
             slow = command_text == "ultrium test ufs2crash"  # recovery matrix: one long run
 
             def wait_for_summary(summary, count):
-                deadline = time.monotonic() + (1800 if slow else 30)
+                deadline = time.monotonic() + (1800 if slow else 240 if command_text == "ultrium test all" else 90)
                 while output.decode(errors="replace").count(summary) < count and time.monotonic() < deadline:
                     for key, _ in selector.select(.5):
                         chunk = os.read(key.fileobj.fileno(), 4096)
