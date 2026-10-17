@@ -285,6 +285,7 @@ static bool range_ok(const struct aspace *s, uint64_t va, size_t length, bool wr
         if (!aspace_translate(s, a, write, NULL)) return false;
     return true;
 }
+bool aspace_range_ok(const struct aspace *s, uint64_t va, size_t length, bool write) { return range_ok(s, va, length, write); }
 bool aspace_copy_to_user(struct aspace *s, uint64_t dst, const void *src, size_t length) {
     if ((length && !src) || !range_ok(s, dst, length, true)) return false;
     const uint8_t *from = src;

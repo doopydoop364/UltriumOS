@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "scheduler/task.h"
+#include "fs/vfs.h"
 
 /* Processes (docs/process-model.md). A user process owns an address space and one task. */
 
@@ -11,6 +12,7 @@
 #define PROCESS_NAME_MAX 16U
 #define PROCESS_STACK_PAGES 8U
 #define PROCESS_STACK_TOP 0x00007ffffff00000ULL        /* the page below the stack stays unmapped (guard) */
+#define PROCESS_CONSOLE_MAX 4096U                    /* bounded copy of a process's console output (tests, diagnostics) */
 #define PROCESS_EXIT_KILLED (-999)                     /* terminated from outside */
 #define PROCESS_EXIT_FAULT_BASE (-1000)                /* status = -1000 - exception vector */
 
@@ -56,6 +58,19 @@ unsigned process_list(struct process_info *out, unsigned max);
 unsigned process_count_live(void);
 /* Read or write the process's address space from kernel code (loader/tests/syscalls). */
 struct aspace *process_aspace(uint32_t pid);
+/* Open-file table (descriptors 3..15; 0-2 are the console). Rights are ULTRIUM_O_READ/WRITE. */
+struct process;
+int process_fd_open(struct process *p, const struct vfs_file *file, uint32_t rights);
+struct vfs_file *process_fd_file(struct process *p, int fd, uint32_t need_rights);
+bool process_fd_close(struct process *p, int fd);
+unsigned process_fd_count(const struct process *p);
+struct aspace *process_aspace_of(struct process *p);
+uint32_t process_pid_of(const struct process *p);
+/* Console output of a process: written to the terminal and also kept (bounded) for diagnostics. */
+unsigned process_console_peek(uint32_t pid, char *out, size_t capacity);   /* copy the captured console text (NUL-terminated) */
+void process_console_append(struct process *p, const char *data, size_t length);
+/* As process_wait, additionally copying out the captured console text (NUL-terminated). */
+bool process_wait_ex(uint32_t pid, int64_t *status, char *console, size_t capacity);
 struct process *process_current(void);
 struct process *process_find(uint32_t pid);
 #endif

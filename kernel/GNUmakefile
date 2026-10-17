@@ -114,6 +114,7 @@ override CFLAGS += \
 override CPPFLAGS := \
     -nostdinc \
     -I src \
+    -I ../shared \
     -I limine-protocol/include \
     -isystem freestanding-c-hdrs/include \
     $(CPPFLAGS) \

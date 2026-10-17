@@ -46,6 +46,8 @@ bool aspace_is_executable(const struct aspace *space, uint64_t va);
    that is not entirely mapped with the right permissions copies nothing and fails. */
 bool aspace_copy_to_user(struct aspace *space, uint64_t dst, const void *src, size_t length);
 /* Loader-only: copy into mapped user pages whatever their W permission (used to fill code segments). */
+/* Is [va, va+length) entirely mapped for user access (and writable when `write`)? Touches nothing. */
+bool aspace_range_ok(const struct aspace *space, uint64_t va, size_t length, bool write);
 bool aspace_poke(struct aspace *space, uint64_t dst, const void *src, size_t length);
 bool aspace_copy_from_user(const struct aspace *space, void *dst, uint64_t src, size_t length);
 /* Copies a NUL-terminated string of at most max-1 characters; returns its length or -1. */
