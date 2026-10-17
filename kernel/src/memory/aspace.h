@@ -58,4 +58,6 @@ uint32_t aspace_data_pages(const struct aspace *space);
    carries no User bit. */
 bool aspace_kernel_half_intact(const struct aspace *space);
 bool aspace_user_bounds_ok(uint64_t va, size_t length);
+/* Test hook: pretend the kernel's top-level slot `index` (0-255 = slots 256-511) appeared or vanished since start-up. */
+void aspace_test_flip_kernel_slot(unsigned index);
 #endif

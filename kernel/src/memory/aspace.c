@@ -26,6 +26,7 @@ struct aspace {
 };
 
 static uint64_t kernel_root;
+static bool kernel_slot_present[256];                 /* which kernel top-level slots (256-511) existed when processes became possible */
 static bool ready, smep, smap;
 static struct aspace *active;
 
@@ -35,6 +36,11 @@ static inline void write_cr3(uint64_t v) { __asm__ volatile("mov %0, %%cr3" : : 
 bool aspace_system_init(void) {
     if (ready || !vmm_direct_offset()) return false;
     kernel_root = read_cr3() & PTE_ADDR;
+    {
+        volatile uint64_t *kroot = (volatile uint64_t *)vmm_direct_map(kernel_root);
+        if (!kroot) return false;
+        for (unsigned i = 0; i < 256; ++i) kernel_slot_present[i] = (kroot[256 + i] & PTE_P) != 0;
+    }
     uint32_t eax = 7, ebx = 0, ecx = 0, edx = 0;
     uint32_t max_leaf;
     __asm__ volatile("cpuid" : "=a"(max_leaf) : "a"(0U) : "ebx", "ecx", "edx");
@@ -77,6 +83,9 @@ struct aspace *aspace_create(void) {
     zero_frame(s->root.physical);
     zero_frame(s->trackers[0].physical);
     volatile uint64_t *root = table_at(s->root.physical), *kroot = table_at(kernel_root);
+    /* A top-level slot the kernel gained after start-up would be missing from every existing address space. */
+    for (unsigned i = 0; i < 256; ++i)
+        if (((kroot[256 + i] & PTE_P) != 0) != kernel_slot_present[i]) { pmm_page_release(&s->trackers[0]); pmm_page_release(&s->root); kfree(s); return NULL; }
     /* Shared kernel half. The bootloader's own top-level entries can carry the User bit (the direct map does):
        clearing it in this private copy makes everything beneath unreachable from ring 3, because x86
        user access needs the User bit at every level. */
@@ -110,6 +119,8 @@ void aspace_destroy(struct aspace *s) {
     s->magic = 0;
     kfree(s);
 }
+
+void aspace_test_flip_kernel_slot(unsigned index) { if (index < 256) kernel_slot_present[index] = !kernel_slot_present[index]; }
 
 bool aspace_user_bounds_ok(uint64_t va, size_t length) {
     if (va < ASPACE_USER_MIN || va >= ASPACE_USER_MAX) return false;

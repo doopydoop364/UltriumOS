@@ -29,6 +29,13 @@ static const char *lifecycle(void) {
         aspace_destroy(s);
     }
     aspace_destroy(NULL);
+    /* A kernel top-level slot that appeared after start-up would be missing from existing spaces: creation must refuse. */
+    for (unsigned slot = 0; slot < 256; slot += 51) {
+        aspace_test_flip_kernel_slot(slot);
+        struct aspace *refused = aspace_create();
+        aspace_test_flip_kernel_slot(slot);
+        if (refused) { aspace_destroy(refused); return "an address space was created although the kernel half changed"; }
+    }
     REQUIRE(pmm_free_pages() == frames && heap_live_allocations() == live, "address spaces leaked frames or heap blocks");
     return 0;
 }
