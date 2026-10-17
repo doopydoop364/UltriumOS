@@ -249,13 +249,22 @@ static const char *resources(void) {
         REQUIRE(process_count_live() == 0 && pmm_free_pages() == frames && heap_live_allocations() == live, "an allocation failure during loading leaked");
     }
     REQUIRE(succeeded, "loading never succeeded");
-    /* too many pages in total */
+    /* too many pages in total: 401 pages are fine, 601 are not */
     memcpy(work, good, sizeof(work));
-    phdr(work, 1, 1, 6, DATA_OFF, 0x500200, 8, 0x100000, 0x1000);
-    phdr(work, 2, 1, 6, DATA_OFF, 0x700000, 8, 0x100000, 0x1000);
+    phdr(work, 1, 1, 6, DATA_OFF, 0x500000, 8, 200 * 4096, 0x1000);
+    phdr(work, 2, 1, 6, DATA_OFF, 0x800000, 8, 200 * 4096, 0x1000);
     w16(work + 56, 3);
     struct elf_plan plan;
-    REQUIRE(elf_parse(work, good_size, &plan) == ELF_E_TOO_BIG || elf_parse(work, good_size, &plan) == ELF_OK, "unexpected result");
+    REQUIRE(elf_parse(work, good_size, &plan) == ELF_OK && plan.pages == 401, "401 pages were refused");
+    phdr(work, 3, 1, 6, DATA_OFF, 0xb00000, 8, 200 * 4096, 0x1000);
+    w16(work + 56, 4);
+    REQUIRE(elf_parse(work, good_size, &plan) == ELF_E_TOO_BIG, "segments totalling more than 512 pages were accepted");
+    /* A 1 MiB segment that starts mid-page spans 257 pages: refused by the parser, not at map time. */
+    memcpy(work, good, sizeof(work));
+    phdr(work, 1, 1, 6, DATA_OFF, 0x500200, 8, 0x100000, 0x1000);
+    REQUIRE(elf_parse(work, good_size, &plan) == ELF_E_TOO_BIG, "a segment spanning more pages than one mapping allows was accepted");
+    phdr(work, 1, 1, 6, DATA_OFF, 0x500000, 8, 0x100000, 0x1000);
+    REQUIRE(elf_parse(work, good_size, &plan) == ELF_OK, "a page-aligned 1 MiB segment was refused");
     return 0;
 }
 

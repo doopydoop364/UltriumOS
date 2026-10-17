@@ -78,6 +78,7 @@ enum elf_error elf_parse(const uint8_t *image, size_t size, struct elf_plan *pla
         if (align > 1 && (align & (align - 1))) return ELF_E_SEGMENT_ADDR;
         if (!aspace_user_bounds_ok(vaddr, (size_t)memsz)) return ELF_E_SEGMENT_ADDR;
         uint64_t first = vaddr & ~4095ULL, last = (vaddr + memsz + 4095ULL) & ~4095ULL;
+        if ((last - first) / 4096U > ASPACE_MAP_MAX_PAGES) return ELF_E_TOO_BIG;       /* the page span, not just memsz, must fit one mapping */
         for (unsigned k = 0; k < plan->count; ++k) {
             uint64_t f2 = plan->segment[k].vaddr & ~4095ULL, l2 = (plan->segment[k].vaddr + plan->segment[k].memsz + 4095ULL) & ~4095ULL;
             if (first < l2 && f2 < last) return ELF_E_OVERLAP;           /* includes two segments sharing a page */
