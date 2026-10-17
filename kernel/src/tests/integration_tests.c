@@ -186,6 +186,13 @@ static const char *kill_during_file_io(void) {
     if (!err) {
         wait_ticks(25);
         struct vfs_info info;
+        /* How deep does the kernel stack of a task get while it writes to UltriumFS through system calls? */
+        for (struct task *t = task_first(); t; t = task_next(t))
+            if (t->process && t->name[0] == 'd') {
+                uint64_t used = task_stack_high_water(t);
+                tests_serial_text("INFO kernel stack high water while writing to UltriumFS: "); tests_serial_number(used); tests_serial_text(" of "); tests_serial_number(TASK_KSTACK_PAGES * 4096U); tests_serial_text(" bytes\n");
+                if (used > (TASK_KSTACK_PAGES * 4096U) / 2) err = "a system call used more than half of the kernel stack";
+            }
         if (vfs_stat("/volumes/disk/spam.bin", &info) != VFS_OK || info.size == 0) err = "the disk writer made no progress";
         else if (ush_execute("ultrium storage unmount /volumes/disk") != USH_FS_ERROR) err = "a volume with an open user file was unmounted";
         else if (!process_kill(pid)) err = "terminate failed";

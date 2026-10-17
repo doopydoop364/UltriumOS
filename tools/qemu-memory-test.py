@@ -58,6 +58,8 @@ def main():
             "-qmp", "unix:" + qmp_path + ",server=on,wait=off",
             "-no-reboot",
         ]
+        if os.environ.get("ULTRIUM_QEMU_CPU"):     # e.g. "max" to expose SMEP/SMAP to the kernel
+            command[1:1] = ["-cpu", os.environ["ULTRIUM_QEMU_CPU"]]
         process = subprocess.Popen(command, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, cwd=ROOT)
         try:

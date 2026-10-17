@@ -60,6 +60,8 @@ void task_switch_to(struct task *next);
 /* Called by a task that has just been switched in (including the first time). */
 void task_finish_switch(void);
 bool task_stack_ok(const struct task *task);
+/* Deepest kernel-stack use in bytes so far (stacks start zeroed; the boot task has no measurable stack). */
+uint64_t task_stack_high_water(const struct task *task);
 unsigned task_count_live(void);
 /* Kernel-stack allocations held by live tasks (each is TASK_KSTACK_PAGES pages of the VMM region). */
 unsigned task_stack_allocations(void);

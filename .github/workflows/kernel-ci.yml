@@ -74,3 +74,10 @@ jobs:
 
       - name: Run userspace programs on a persistent virtio disk with independent host verification
         run: python3 tools/qemu-process-test.py
+
+      - name: Run user-mode suites with SMEP and SMAP exposed (QEMU -cpu max)
+        run: |
+          for group in aspace ring3 syscalls elf programs processshell integration; do
+            ULTRIUM_QEMU_CPU=max python3 tools/qemu-memory-test.py "ultrium test $group"
+          done
+
