@@ -73,3 +73,14 @@ To capture the completion listing for visual QA, set `ULTRIUM_QEMU_SCREENSHOT` t
 ## UltriumFS 2 recovery matrix
 
 `ultrium test ufs2crash` (12 cases, ~6,500 interrupted runs, several minutes, **not** in `ultrium test all`) cuts power before every I/O event of real UltriumFS 2 file operations and checks the recovered volume; `python3 tools/qemu-ufs2-recovery-test.py` repeats deterministic cuts on a virtio disk with independent host verification; `python3 tools/ufs2-host-negative-controls.py` proves the host reader detects deliberate corruption. See `docs/ultriumfs-v2-crash-testing.md` for the models, allowed results and limits. Run it with `python3 tools/qemu-memory-test.py 'ultrium test ufs2crash'`.
+
+## Processes, scheduler, userspace (v0.7.0)
+
+`ultrium test all` now runs 155 cases, including: `tasks` (3: context switching), `scheduler` (9), `aspace` (9), `ring3` (6), `syscalls` (4), `elf` (6), `programs` (6), `processshell` (5), `integration` (4). Each group is also a command of its own. Related QEMU procedures:
+
+```sh
+python3 tools/qemu-memory-test.py --process-regression   # run/jobs/Ctrl+C typed through real PS/2 events
+python3 tools/qemu-process-test.py                       # userspace + persistent virtio disk, shutdown with live processes, abrupt stop, host-verified
+```
+
+What each group proves and its negative controls are in `docs/process-model.md`, `docs/syscall-abi.md`, `docs/elf-loader.md` and `docs/userspace-runtime.md`. The scheduler and ring-3 tests assume a single CPU and QEMU's default CPU model (no SMEP/SMAP).

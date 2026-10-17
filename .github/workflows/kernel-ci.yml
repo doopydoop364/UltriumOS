@@ -12,7 +12,7 @@ permissions:
 jobs:
   llvm-qemu:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -71,3 +71,13 @@ jobs:
         run: |
           python3 tools/qemu-ufs2-recovery-test.py
           python3 tools/ufs2-host-negative-controls.py
+
+      - name: Run userspace programs on a persistent virtio disk with independent host verification
+        run: python3 tools/qemu-process-test.py
+
+      - name: Run user-mode suites with SMEP and SMAP exposed (QEMU -cpu max)
+        run: |
+          for group in aspace ring3 syscalls elf programs processshell integration; do
+            ULTRIUM_QEMU_CPU=max python3 tools/qemu-memory-test.py "ultrium test $group"
+          done
+

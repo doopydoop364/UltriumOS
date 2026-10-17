@@ -11,5 +11,8 @@
 unsigned programs_count(void);
 const char *programs_name(unsigned index);
 bool programs_image(unsigned index, const uint8_t **data, size_t *size);
-bool programs_install(void);           /* idempotent; returns false if any program could not be written */
+bool programs_install(void);           /* the normal set, idempotent; false if any program could not be written */
+bool programs_is_test_only(unsigned index);
+/* Install or remove one set: `test_set` selects the test-only programs (hostile calls, crash, sleeper, ...). */
+bool programs_install_set(bool test_set, bool install);
 #endif

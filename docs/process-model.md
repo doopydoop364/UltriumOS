@@ -1,6 +1,6 @@
 # Ultrium process and thread model
 
-Status: **specification (this PR is documentation only)**. Nothing described here is implemented yet. Each later PR in the stack states which parts it implements and updates the "Implementation status" table at the end of this file. Do not describe a row as working until its PR says so.
+Status: **specification plus the implementation status table at the end**. Rows marked implemented were built and QEMU-tested in the stacked PRs listed there; everything else in this file is design. Do not describe a row as working unless the table says so.
 
 Scope: single CPU, ring 0 and ring 3, one thread per process initially. The design leaves room for several threads per process and several CPUs without requiring either now. See [component-architecture.md](component-architecture.md) for the Kernel / OS / GUI split: processes, the scheduler and system calls belong to the **Kernel**; programs and the runtime belong to **OS**.
 
@@ -119,11 +119,13 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | ELF64 loader | `feature/elf-loader` | **implemented, QEMU-tested** (`docs/elf-loader.md`, `ultrium test elf`, 6 cases): static `ET_EXEC` x86-64 only, 55 header/segment mutations, 4000-image fuzz, loading from the VFS |
 | Userspace runtime and programs | `feature/userspace-runtime` | **implemented, QEMU-tested** (`os/`, `docs/userspace-runtime.md`, `ultrium test programs`, 6 cases): hello, counter, filedemo, fpudemo run in ring 3 concurrently, loaded from `/bin` through the VFS |
 | Shell process commands | `feature/process-shell` | **implemented, QEMU-tested** (USH 0.6: `run [-b]`, `jobs`, `terminate`, `ultrium system processes`; `ultrium test processshell` 5 cases + `--process-regression` through real PS/2 events incl. Ctrl+C). `docs/ultrium-shell.md` |
-| Integration tests | `feature/process-integration` | not started |
+| Integration tests | `feature/process-integration` | **implemented, QEMU-tested** (`ultrium test integration`, 4 cases; `tools/qemu-process-test.py`): kernel tasks + eight user programs together incl. a fault and a kill inside a syscall, process/task exhaustion, userspace file I/O on UltriumFS 2 (memory-backed and virtio), shutdown with live processes, abrupt stop during userspace file writes, host-verified |
 
 ## Ring 3 facts verified by test
 
 - Faults from ring 3 that end only the process: #GP (cli, hlt, in, `mov cr3`, `int 0x21`, `int3` because the breakpoint gate is DPL 0, non-canonical access), #UD (`ud2`, `syscall`), #DE, #PF for the kernel image, the direct map, null, another process's page, a write to a code page (W^X) and execution of data or stack (NX).
 - NMI, double fault, machine check and any exception taken in ring 0 remain fatal.
 - The bootloader's top-level entries for the kernel half carry the User bit; each address space clears it in its own copy. Without that, ring 3 would not fault on kernel reads.
-- Not covered yet: SMEP/SMAP on hardware that has them (QEMU's default CPU model does not), `SYSCALL`/`SYSRET`, ring-3 access to I/O ports via IOPL/IO bitmap (the TSS has no bitmap, so `in`/`out` fault).
+- SMEP and SMAP are enabled whenever the CPU offers them. QEMU's default CPU model offers neither, so CI also runs every user-mode suite with `ULTRIUM_QEMU_CPU=max` (TCG exposes both): all pass with SMEP and SMAP on, which also confirms that the kernel never touches user memory except through the software-walk copies. Not covered: real hardware, `SYSCALL`/`SYSRET` (unsupported, `EFER.SCE` cleared), I/O-port permission bitmaps (the TSS has none, so `in`/`out` fault).
+- Kernel stack depth: a user task has a 16 KiB kernel stack with a canary at the bottom (no hardware guard page). Writing to UltriumFS through system calls was measured at about 2 KiB (`integration` asserts it stays below half the stack). The canary catches overflows only if they hit it; deep paths not exercised by the tests (for example extent-map promotion from a syscall) are not measured.
+- `ultrium_exception_common`, the IRQ stub and the syscall stub clear DF and AC on entry (`pushfq; and; popfq`): ring 3 can set both, and AC would otherwise disable SMAP for the whole call. Tested with programs that set both flags before a system call, a fault and a timer interrupt.

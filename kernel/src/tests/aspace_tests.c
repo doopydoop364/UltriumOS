@@ -20,6 +20,18 @@
 static const char *lifecycle(void) {
     uint64_t frames = pmm_free_pages(), live = heap_live_allocations();
     REQUIRE(aspace_system_ready(), "address-space support not initialised");
+    {   /* Every protection the CPU offers must be on (QEMU's default CPU model offers neither; ULTRIUM_QEMU_CPU=max does). */
+        uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0, max_leaf;
+        __asm__ volatile("cpuid" : "=a"(max_leaf) : "a"(0U) : "ebx", "ecx", "edx");
+        if (max_leaf >= 7) {
+            eax = 7; ecx = 0;
+            __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+            REQUIRE(!(ebx & (1U << 7)) || aspace_smep_enabled(), "the CPU has SMEP but it is not enabled");
+            REQUIRE(!(ebx & (1U << 20)) || aspace_smap_enabled(), "the CPU has SMAP but it is not enabled");
+            tests_serial_text("INFO SMEP "); tests_serial_text(aspace_smep_enabled() ? "enabled" : "not offered by this CPU model");
+            tests_serial_text(", SMAP "); tests_serial_text(aspace_smap_enabled() ? "enabled" : "not offered by this CPU model"); tests_serial_text("\n");
+        }
+    }
     for (unsigned i = 0; i < 50; ++i) {
         struct aspace *s = aspace_create();
         REQUIRE(s, "create failed");

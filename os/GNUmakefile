@@ -9,7 +9,7 @@ else
     CC := gcc
     override TARGET_FLAGS :=
 endif
-PROGRAMS := hello counter filedemo fpudemo spin
+PROGRAMS := hello counter filedemo fpudemo spin badcalls filecheck sleeper crash diskwriter
 CFLAGS := -Os -g0 -std=gnu11 -Wall -Wextra -ffreestanding -fno-stack-protector -fno-pic -fno-pie \
           -fno-asynchronous-unwind-tables -fno-builtin -fcf-protection=none -mno-red-zone
 INCLUDES := -I runtime -I ../shared

@@ -871,7 +871,7 @@ static const char *filesystem_capacity(void) {
     unsigned program_nodes = 1;
     for (unsigned i = 0; i < programs_count(); ++i) {
         const uint8_t *image; size_t size;
-        if (!programs_image(i, &image, &size)) continue;
+        if (programs_is_test_only(i) || !programs_image(i, &image, &size)) continue;       /* test programs are not installed at boot */
         size_t cap = 64;
         while (cap < size && cap < VFS_FILE_MAX) cap *= 2;
         program_capacity += cap;
@@ -1152,6 +1152,9 @@ void kernel_tests_persist_clean(void) { run(persist_clean_cases, persist_clean_c
 void kernel_tests_persist_v1fixture(void) { run(persist_v1fixture_cases, persist_v1fixture_count); }
 void kernel_tests_persist_v1verify(void) { run(persist_v1verify_cases, persist_v1verify_count); }
 void kernel_tests_persist_unclean(void) { run(persist_unclean_cases, persist_unclean_count); }
+void kernel_tests_persist_v2_program_write(void) { run(persist_v2_program_write_cases, 1); }
+void kernel_tests_persist_v2_program_read(void) { run(persist_v2_program_read_cases, 1); }
+void kernel_tests_persist_v2_program_spam(void) { run(persist_v2_program_spam_cases, 1); }
 void kernel_tests_persist_v2_big(void) { run(persist_v2_big_cases, 1); }
 void kernel_tests_persist_v2_bigverify(void) { run(persist_v2_bigverify_cases, 1); }
 void kernel_tests_persist_v2_cut_dataflush(void) { run(persist_v2_cut_dataflush_cases, 1); }
@@ -1162,6 +1165,7 @@ void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoin
 void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
 void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
 void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
+void kernel_tests_integration(void) { run(integration_cases, integration_case_count); }
 void kernel_tests_processshell(void) { run(process_shell_cases, process_shell_case_count); }
 void kernel_tests_programs(void) { run(program_cases, program_case_count); }
 void kernel_tests_elf(void) { run(elf_cases, elf_case_count); }
@@ -1180,7 +1184,7 @@ void kernel_tests_ufs2crash(void) {
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases, program_cases, process_shell_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases, program_cases, process_shell_cases, integration_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1197,7 +1201,8 @@ void kernel_tests_all(void) {
         syscall_case_count,
         elf_case_count,
         program_case_count,
-        process_shell_case_count
+        process_shell_case_count,
+        integration_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

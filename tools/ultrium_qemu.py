@@ -53,6 +53,8 @@ class VM:
                 dev += ",logical_block_size=%d,physical_block_size=%d" % (block_size, block_size)
             cmd += ["-drive", "if=none,id=ud0,format=raw,file=" + image +
                     (",readonly=on" if readonly else ""), "-device", dev]
+        if os.environ.get("ULTRIUM_QEMU_CPU"):
+            cmd[1:1] = ["-cpu", os.environ["ULTRIUM_QEMU_CPU"]]
         cmd += list(extra)
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=ROOT)
         self.output = bytearray()

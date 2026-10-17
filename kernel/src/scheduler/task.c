@@ -124,6 +124,13 @@ bool task_stack_ok(const struct task *t) {
     return !t->stack_base || *(const uint64_t *)t->stack_base == STACK_CANARY;
 }
 
+uint64_t task_stack_high_water(const struct task *t) {
+    if (!t || !t->stack_base) return 0;
+    uint64_t size = (uint64_t)TASK_KSTACK_PAGES * 4096U, i = 8;           /* skip the canary word */
+    while (i < size && !t->stack_base[i]) ++i;
+    return size - i;
+}
+
 bool task_destroy(struct task *t) {
     if (!t || t == current || t->state == TASK_UNUSED || t->state == TASK_RUNNING || (t->flags & TASK_FLAG_IMMORTAL)) return false;
     if (t->stack_base && !vmm_free_pages(t->stack_base)) return false;

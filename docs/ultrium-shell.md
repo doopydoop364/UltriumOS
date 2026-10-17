@@ -2,7 +2,7 @@
 
 **Simple actions should be short. Complex operations should be structured. Everything should be discoverable.**
 
-USH is Ultrium's native, freestanding kernel shell. The kernel is 0.5.0; the shell has its own component version (`ultrium shell version`). It works without graphics applications, networking or AI. PULSE's black console, warm-white text, signal-red accents, VGA 8×16 font and boot presentation remain unchanged.
+USH is Ultrium's native, freestanding kernel shell. The kernel is 0.7.0; the shell has its own component version (`ultrium shell version`). It works without graphics applications, networking or AI. PULSE's black console, warm-white text, signal-red accents, VGA 8×16 font and boot presentation remain unchanged.
 
 ## Native command reference
 
