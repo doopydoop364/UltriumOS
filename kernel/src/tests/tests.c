@@ -1126,6 +1126,7 @@ void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoin
 void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
 void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
 void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
+void kernel_tests_elf(void) { run(elf_cases, elf_case_count); }
 void kernel_tests_syscalls(void) { run(syscall_cases, syscall_case_count); }
 void kernel_tests_ring3(void) { run(ring3_cases, ring3_case_count); }
 void kernel_tests_aspace(void) { run(aspace_cases, aspace_case_count); }
@@ -1140,7 +1141,7 @@ void kernel_tests_ufs2crash(void) {
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1154,7 +1155,8 @@ void kernel_tests_all(void) {
         sched_case_count,
         aspace_case_count,
         ring3_case_count,
-        syscall_case_count
+        syscall_case_count,
+        elf_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }
