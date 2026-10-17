@@ -4,6 +4,7 @@
 #include "scheduler/task.h"
 #include "memory/vmm.h"
 #include "system/exceptions.h"
+#include "memory/aspace.h"
 
 #define STACK_CANARY 0x554c5452534b5354ULL   /* "ULTRSKST" */
 
@@ -144,8 +145,13 @@ void task_switch_to(struct task *next) {
         __asm__ volatile("cli");
         for (;;) __asm__ volatile("hlt");              /* kernel stack overflow: unrecoverable */
     }
+    if (prev->uses_fpu) __asm__ volatile("fxsave %0" : "=m"(prev->fxsave));        /* eager SIMD/x87 state switch, user tasks only */
+    if (next->aspace != aspace_active()) {
+        if (next->aspace) aspace_activate(next->aspace); else aspace_activate_kernel();
+    }
     current = next;
     if (next->stack_top) exceptions_set_kernel_stack(next->stack_top);
+    if (next->uses_fpu) __asm__ volatile("fxrstor %0" : : "m"(next->fxsave));
     ultrium_switch(&prev->saved_rsp, next->saved_rsp);
     /* Back in `prev`, switched in again. */
     ++prev->switches_in;

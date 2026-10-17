@@ -35,6 +35,8 @@ void aspace_destroy(struct aspace *space);
    nothing: on any failure nothing is mapped and no frame stays allocated. */
 bool aspace_map(struct aspace *space, uint64_t va, size_t pages, uint32_t permissions);
 bool aspace_unmap(struct aspace *space, uint64_t va, size_t pages);
+/* Change the permissions of already-mapped pages (RO, RW or RX only; never W+X). */
+bool aspace_protect(struct aspace *space, uint64_t va, size_t pages, uint32_t permissions);
 /* Software walk: physical address of a user address, requiring the User bit and
    (optionally) write permission. Never touches user memory. */
 bool aspace_translate(const struct aspace *space, uint64_t va, bool write, uint64_t *physical);
@@ -43,6 +45,8 @@ bool aspace_is_executable(const struct aspace *space, uint64_t va);
 /* Validated copies. The whole range is checked before anything is copied; a range
    that is not entirely mapped with the right permissions copies nothing and fails. */
 bool aspace_copy_to_user(struct aspace *space, uint64_t dst, const void *src, size_t length);
+/* Loader-only: copy into mapped user pages whatever their W permission (used to fill code segments). */
+bool aspace_poke(struct aspace *space, uint64_t dst, const void *src, size_t length);
 bool aspace_copy_from_user(const struct aspace *space, void *dst, uint64_t src, size_t length);
 /* Copies a NUL-terminated string of at most max-1 characters; returns its length or -1. */
 long aspace_copy_string_from_user(const struct aspace *space, char *dst, uint64_t src, size_t max);

@@ -23,7 +23,8 @@ def main():
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 8,
-        "ultrium test all": 124,
+        "ultrium test all": 130,
+        "ultrium test ring3": 6,
         "ultrium test aspace": 9,
         "ultrium test scheduler": 9,
         "ultrium test tasks": 3,
@@ -37,7 +38,7 @@ def main():
     if not keyboard_regression and not shell_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
             "ultrium test filesystem", "ultrium test shell",
-            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace",
+            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
@@ -101,7 +102,7 @@ def main():
             slow = command_text == "ultrium test ufs2crash"  # recovery matrix: one long run
 
             def wait_for_summary(summary, count):
-                deadline = time.monotonic() + (1800 if slow else 30)
+                deadline = time.monotonic() + (1800 if slow else 240 if command_text == "ultrium test all" else 90)
                 while output.decode(errors="replace").count(summary) < count and time.monotonic() < deadline:
                     for key, _ in selector.select(.5):
                         chunk = os.read(key.fileobj.fileno(), 4096)

@@ -260,6 +260,24 @@ bool aspace_unmap(struct aspace *s, uint64_t va, size_t pages) {
     return true;
 }
 
+bool aspace_protect(struct aspace *s, uint64_t va, size_t pages, uint32_t permissions) {
+    if (!s || s->magic != MAGIC || !pages || pages > ASPACE_MAP_MAX_PAGES || (va & (PAGE - 1)) || !permissions_ok(permissions) ||
+        !aspace_user_bounds_ok(va, pages * PAGE)) return false;
+    for (size_t i = 0; i < pages; ++i) {
+        volatile uint64_t *leaf = leaf_entry(s, va + i * PAGE);
+        if (!leaf || !(*leaf & PTE_P) || !(*leaf & PTE_U)) return false;
+    }
+    for (size_t i = 0; i < pages; ++i) {
+        volatile uint64_t *leaf = leaf_entry(s, va + i * PAGE);
+        uint64_t e = *leaf & ~(PTE_W | PTE_NX);
+        if (permissions & VMM_PAGE_WRITE) e |= PTE_W;
+        if (!(permissions & VMM_PAGE_EXECUTE)) e |= PTE_NX;
+        *leaf = e;
+    }
+    write_cr3(active == s ? s->root.physical : read_cr3());                  /* flush stale permissions */
+    return true;
+}
+
 static bool range_ok(const struct aspace *s, uint64_t va, size_t length, bool write) {
     if (!s || s->magic != MAGIC || !aspace_user_bounds_ok(va, length)) return false;
     if (!length) return true;
@@ -273,6 +291,20 @@ bool aspace_copy_to_user(struct aspace *s, uint64_t dst, const void *src, size_t
     for (size_t done = 0; done < length;) {
         uint64_t physical;
         if (!aspace_translate(s, dst + done, true, &physical)) return false;
+        size_t chunk = PAGE - ((dst + done) & (PAGE - 1));
+        if (chunk > length - done) chunk = length - done;
+        volatile uint8_t *to = (volatile uint8_t *)vmm_direct_map(physical);
+        for (size_t i = 0; i < chunk; ++i) to[i] = from[done + i];
+        done += chunk;
+    }
+    return true;
+}
+bool aspace_poke(struct aspace *s, uint64_t dst, const void *src, size_t length) {
+    if ((length && !src) || !range_ok(s, dst, length, false)) return false;
+    const uint8_t *from = src;
+    for (size_t done = 0; done < length;) {
+        uint64_t physical;
+        if (!aspace_translate(s, dst + done, false, &physical)) return false;
         size_t chunk = PAGE - ((dst + done) & (PAGE - 1));
         if (chunk > length - done) chunk = length - done;
         volatile uint8_t *to = (volatile uint8_t *)vmm_direct_map(physical);

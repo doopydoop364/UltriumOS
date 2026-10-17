@@ -114,9 +114,16 @@ Processes will carry a credential/capability set checked by the kernel (see [aut
 | Context switching | `feature/context-switching` | **implemented, QEMU-tested**: task table, 16 KiB kernel stacks with canary, register-level `task_switch_to`, TSS.RSP0 update, cooperative only (`ultrium test tasks`, 3 cases). No queues or preemption yet |
 | Scheduler | `feature/scheduler` | **implemented, QEMU-tested**: round robin, 50 ms slices, yield/block/wake/sleep, idle task, reaper, timer preemption of ring-3 and `PREEMPTIBLE` kernel tasks only (`ultrium test scheduler`, 9 cases). Kernel code is not preemptible. Single CPU only |
 | Per-process address spaces | `feature/user-address-spaces` | **implemented, QEMU-tested** (`memory/aspace.c`, `ultrium test aspace`, 9 cases): private PML4, shared kernel half with the User bit cleared, W^X, bounded mappings with rollback, software-walk validated copies, frame limit, destroy-while-active. No ring 3 code runs yet. SMEP/SMAP are enabled only if the CPU reports them (QEMU's default CPU model does not) |
-| Ring 3 execution | `feature/ring3` | not started |
+| Ring 3 execution | `feature/ring3` | **implemented, QEMU-tested** (`processes/process.c`, `ultrium test ring3`, 6 cases): GDT with ring-3 code/data (0x23/0x1b) and TSS at 0x28, `iretq` entry, per-task `CR3` and eager FXSAVE switching, `int 0x80` gate (DPL 3) with only `exit`/`yield`, user faults end only the faulting process (exit status `-1000 - vector`), `EFER.SCE` cleared so `SYSCALL` raises #UD. Programs are hand-assembled images; no loader yet |
 | System calls | `feature/syscalls` | not started |
 | ELF64 loader | `feature/elf-loader` | not started |
 | Userspace runtime and programs | `feature/userspace-runtime` | not started |
 | Shell process commands | `feature/process-shell` | not started |
 | Integration tests | `feature/process-integration` | not started |
+
+## Ring 3 facts verified by test
+
+- Faults from ring 3 that end only the process: #GP (cli, hlt, in, `mov cr3`, `int 0x21`, `int3` because the breakpoint gate is DPL 0, non-canonical access), #UD (`ud2`, `syscall`), #DE, #PF for the kernel image, the direct map, null, another process's page, a write to a code page (W^X) and execution of data or stack (NX).
+- NMI, double fault, machine check and any exception taken in ring 0 remain fatal.
+- The bootloader's top-level entries for the kernel half carry the User bit; each address space clears it in its own copy. Without that, ring 3 would not fault on kernel reads.
+- Not covered yet: SMEP/SMAP on hardware that has them (QEMU's default CPU model does not), `SYSCALL`/`SYSRET`, ring-3 access to I/O ports via IOPL/IO bitmap (the TSS has no bitmap, so `in`/`out` fault).
