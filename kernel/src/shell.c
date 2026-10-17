@@ -141,6 +141,9 @@ static const struct ush_command registry[] = {
     N("go","folder","Change current folder","path","go",1,1),
     N("remove","folder","Remove an item","path [-r] [-y]","remove",1,5),
     N("info","folder","Show stored metadata","path","info",1,1),
+    N("run","","Run a native program in its own process (foreground; Ctrl+C ends it)","[-b|--background] <program>","process run",1,2),
+    N("jobs","","List running and finished programs","","process jobs",0,0),
+    N("terminate","","End a process immediately (it is not paused or resumed)","<pid>","process terminate",1,1),
     G("ultrium","","Ultrium OS administration"),
     B("version","ultrium","Kernel version",version),
     G("system","ultrium","System diagnostics"),
@@ -156,6 +159,7 @@ static const struct ush_command registry[] = {
     G("power","ultrium system","Power management"),
     B("status","ultrium system power","ACPI power-off support",power_status_command),
     B("shutdown","ultrium system power","Power off the machine (ACPI)",shutdown_command),
+    N("processes","ultrium system","Processes: state, memory, scheduling, result","","process list",0,0),
     B("exceptions","ultrium system","Exception and IST status",exception_status),
     B("interrupts","ultrium system","APIC and timer status",interrupts_status),
     G("test","ultrium","Kernel test suites"),
@@ -194,10 +198,12 @@ static const struct ush_command registry[] = {
     B("syscalls","ultrium test","System-call interface tests",kernel_tests_syscalls),
     B("elf","ultrium test","ELF64 loader tests",kernel_tests_elf),
     B("programs","ultrium test","Sample userspace programs (hello, counter, filedemo, fpudemo)",kernel_tests_programs),
+    B("processshell","ultrium test","Shell process commands (run, jobs, terminate)",kernel_tests_processshell),
     B("ufs2fs","ultrium test","UltriumFS 2 filesystem tests",kernel_tests_ufs2fs),
     B("ufs2crash","ultrium test","UltriumFS 2 recovery matrix (power cut at every I/O event; slow, not in 'all')",kernel_tests_ufs2crash),
     B("shell","ultrium test","USH command tests",kernel_tests_shell),
     B("begin","ultrium test shell","Begin bounded interactive test capture",kernel_tests_shell_interactive_begin),
+    B("processes","ultrium test shell","Verify the process-command keyboard session",kernel_tests_shell_process_session),
     B("interactive","ultrium test shell","Verify QMP shell fixture and output",kernel_tests_shell_interactive),
     B("all","ultrium test","All kernel suites",kernel_tests_all),
     G("storage","ultrium","Block devices, UltriumFS volumes and mounts"),
@@ -257,7 +263,8 @@ bool ush_registry_valid(void) {
         if (!c->name[0] || c->minimum > c->maximum || (c->operation && c->builtin)) return false;
         if (c->operation) {
             const char *operations[] = {"list","go","where","new file","new folder","view","write","remove","info","copy","move","rename",
-                "storage volumes","storage format","storage mount","storage unmount","storage sync","storage info","storage check"};
+                "storage volumes","storage format","storage mount","storage unmount","storage sync","storage info","storage check",
+                "process run","process jobs","process terminate","process list"};
             bool known = false;
             for (size_t j = 0; j < sizeof(operations)/sizeof(operations[0]); ++j)
                 if (same(c->operation, operations[j])) known = true;

@@ -5,6 +5,7 @@
 #include "tests_internal.h"
 #include "scheduler/task.h"
 #include "processes/programs.h"
+#include "processes/process.h"
 #include "terminal/terminal.h"
 #include "memory/pmm.h"
 #include "memory/heap.h"
@@ -1056,6 +1057,27 @@ static const char *shell_interactive_session(void) {
     interactive_active = false;
     return reason;
 }
+/* Verifies a session typed through real PS/2 events (tools/qemu-memory-test.py --process-regression). */
+static const char *shell_process_session(void) {
+    terminal_test_capture(0);
+    if (!interactive_active) return "start with ultrium test shell begin";
+    const char *reason = 0;
+    const char *expected[] = {"Hello from Ultrium userspace!", "exited with status 0", "started in the background", "spin", "ready",
+        "^C", "terminated", "Cannot run '/bin/nothing'", "Processes: 1 of"};
+    for (size_t i = 0; i < sizeof(expected)/sizeof(expected[0]); ++i)
+        if (!terminal_test_contains(expected[i])) { reason = "process command output missing or capture overflowed"; report("MISSING "); report(expected[i]); report("\n"); }
+    /* Exactly the background spin program must be left (Ctrl+C ended the foreground one). End it now. */
+    struct process_info list[PROCESS_MAX];
+    unsigned n = process_list(list, PROCESS_MAX);
+    if (n != 1 || list[0].state != PROC_ACTIVE) reason = reason ? reason : "the background job is missing or extra processes remain";
+    for (unsigned i = 0; i < n; ++i) { int64_t st; (void)process_kill(list[i].pid); (void)process_wait(list[i].pid, &st); }
+    if (process_count_live() != 0) reason = reason ? reason : "a process was left behind by the keyboard session";
+    if (heap_live_allocations() != interactive_allocations || pmm_free_pages() != interactive_frames)
+        reason = reason ? reason : "process commands leaked memory";
+    interactive_active = false;
+    return reason;
+}
+static const struct test_case shell_process_cases[] = {{"USH process commands typed on the keyboard", shell_process_session}};
 static const struct test_case shell_cases[] = {
     {"USH quoting and limits", shell_quoting},
     {"USH completion and suggestions", shell_completion},
@@ -1140,12 +1162,14 @@ void kernel_tests_persist_v2_cut_checkpoint(void) { run(persist_v2_cut_checkpoin
 void kernel_tests_persist_v2_recovered(void) { run(persist_v2_recovered_cases, 1); }
 void kernel_tests_persist_v2_stream(void) { run(persist_v2_stream_cases, 1); }
 void kernel_tests_persist_v2_streamverify(void) { run(persist_v2_streamverify_cases, 1); }
+void kernel_tests_processshell(void) { run(process_shell_cases, process_shell_case_count); }
 void kernel_tests_programs(void) { run(program_cases, program_case_count); }
 void kernel_tests_elf(void) { run(elf_cases, elf_case_count); }
 void kernel_tests_syscalls(void) { run(syscall_cases, syscall_case_count); }
 void kernel_tests_ring3(void) { run(ring3_cases, ring3_case_count); }
 void kernel_tests_aspace(void) { run(aspace_cases, aspace_case_count); }
 void kernel_tests_scheduler(void) { run(sched_cases, sched_case_count); }
+void kernel_tests_shell_process_session(void) { run(shell_process_cases, 1); }
 void kernel_tests_tasks(void) { run(task_cases, task_case_count); }
 void kernel_tests_ufs2(void) { run(ufs2_journal_cases, ufs2_journal_case_count); }
 void kernel_tests_ufs2fs(void) { run(ufs2_fs_cases, ufs2_fs_case_count); }
@@ -1156,7 +1180,7 @@ void kernel_tests_ufs2crash(void) {
 void kernel_tests_storage_disk(void) { run(storage_disk_cases, storage_disk_case_count); }
 void kernel_tests_shell(void) { run(shell_cases, sizeof(shell_cases)/sizeof(shell_cases[0])); }
 void kernel_tests_all(void) {
-    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases, program_cases};
+    const struct test_case *groups[] = {memory_cases, interrupt_cases, filesystem_cases, shell_cases, storage_cases, ultriumfs_cases, ufs2_journal_cases, ufs2_fs_cases, task_cases, sched_cases, aspace_cases, ring3_cases, syscall_cases, elf_cases, program_cases, process_shell_cases};
     const size_t counts[] = {
         sizeof(memory_cases)/sizeof(memory_cases[0]),
         sizeof(interrupt_cases)/sizeof(interrupt_cases[0]),
@@ -1172,7 +1196,8 @@ void kernel_tests_all(void) {
         ring3_case_count,
         syscall_case_count,
         elf_case_count,
-        program_case_count
+        program_case_count,
+        process_shell_case_count
     };
     run_groups(groups, counts, sizeof(groups)/sizeof(groups[0]));
 }

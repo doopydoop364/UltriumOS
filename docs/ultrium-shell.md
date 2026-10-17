@@ -1,4 +1,4 @@
-# Ultrium Shell (USH 0.5)
+# Ultrium Shell (USH 0.6)
 
 **Simple actions should be short. Complex operations should be structured. Everything should be discoverable.**
 
@@ -129,3 +129,23 @@ Milestones: USH 0.1 native commands/compatibility; 0.2 registry/help; 0.3 safe o
 ## Storage
 
 The native filesystem verbs work on mounted UltriumFS volumes through the VFS; `info` reports the backing filesystem from the VFS. Storage administration lives under `ultrium storage` (see [UltriumFS in the VFS](ultriumfs-vfs.md)). `remove` semantics are unchanged: it never crosses a mount point, `-r` is required for recursion and `-y` only skips confirmation.
+
+## Processes (USH 0.6)
+
+USH still runs **inside the kernel**; these commands start, list and end separate **user processes** (ring 3, private address space, see [process-model.md](process-model.md)). They use the native verb style and add no Linux aliases (not even in compatibility mode: `ps`, `kill`, `bg`, `fg` do not exist).
+
+| Command | Meaning |
+| --- | --- |
+| `run <program>` | Foreground. `<program>` without a `/` is looked up in `/bin`; with a `/` it is a path (relative to the current folder, any filesystem). The shell waits, prints `[pid N] <name>: exited with status S` (or the CPU fault if the program crashed), and returns to the prompt. **Ctrl+C ends the program** (`^C` then `terminated`). Other keys typed while it runs are discarded. |
+| `run -b <program>` / `run --background <program>` | Starts the program and returns at once (`[pid N] started in the background`). The flag may come before or after the program name. |
+| `jobs` | Lists programs started with `run -b` that are still alive or have finished; a finished job is reported once (`exited with status S`) and then released. Starting a new program also reports and releases finished jobs. |
+| `terminate <pid>` | Ends a process immediately. It is **not** a pause: there is no stop/continue, so no command is called `stop` or `kill`. A process that already finished is reported by `jobs` instead. |
+| `ultrium system processes` | Table of user processes: PID, parent, state, data pages, times it was scheduled in, name and result. Kernel tasks (shell, idle) are not listed. |
+
+Every path supports trailing `help`; `ultrium system help` lists `processes`. A program that crashes (privileged instruction, bad memory access) is stopped, reported as `stopped by a CPU fault: ...`, and the shell and the rest of the system carry on. The exit status of a faulted process is `-1000 - vector` and of a terminated one `-999`.
+
+`run` does not pass arguments to the program (ABI 1.0 has none). Programs shipped in `/bin`: `hello`, `counter`, `filedemo`, `fpudemo`, `spin` (see [userspace-runtime.md](userspace-runtime.md)).
+
+## Future: moving USH out of the kernel (plan, not implemented)
+
+The shell stays in the kernel until the system-call ABI can carry what it needs. In order: (1) ABI 1.1/2.0: `stat`, directory listing, `mkdir`/`unlink`/`rename`, `seek`, a keyboard `read` on descriptor 0 and a `spawn`/`wait` pair; (2) a userspace line editor and parser (the registry, completion and help move with it; the registry is already static data); (3) run the userspace USH next to the kernel one under a different command until `--shell-regression` and `--keyboard-regression` pass identically against it; (4) only then retire the kernel copy. `auth`/`as` remain unavailable until the permission design in [authorization-architecture.md](authorization-architecture.md) has kernel enforcement.
