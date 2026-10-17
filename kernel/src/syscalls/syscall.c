@@ -11,7 +11,7 @@ static uint64_t calls;
 __asm__(
 ".global ultrium_syscall_entry\n"
 "ultrium_syscall_entry:\n"
-"cld\n"
+"pushfq\n" "andq $-263169, (%rsp)\n" "popfq\n"             /* clear DF and AC: ring 3 can set both (AC would disable SMAP for the call) */
 "pushq %rax\n" "pushq %rbx\n" "pushq %rcx\n" "pushq %rdx\n"
 "pushq %rbp\n" "pushq %rsi\n" "pushq %rdi\n"
 "pushq %r8\n" "pushq %r9\n" "pushq %r10\n" "pushq %r11\n"

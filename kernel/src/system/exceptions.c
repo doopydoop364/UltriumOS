@@ -95,6 +95,7 @@ __attribute__((noreturn)) void ultrium_exception_report(const struct fault_frame
 __asm__(
 ".global ultrium_exception_common\n"
 "ultrium_exception_common:\n"
+"pushfq\n" "andq $-263169, (%rsp)\n" "popfq\n"             /* clear DF and AC: ring 3 can set both */
 "movq %rsp, %rdi\n"
 "andq $-16, %rsp\n"
 "call ultrium_exception_report\n"

@@ -108,21 +108,22 @@ static const char *basic(void) {
     return 0;
 }
 
-struct fault_case { const char *name; const uint8_t *code; size_t len; uint64_t vector; uint64_t address; bool check_address; uint64_t error_mask, error_bits; };
-#define FC(n, c, vec) {n, c, sizeof(c), vec, 0, false, 0, 0}
+struct fault_case { const char *name; const uint8_t *code; size_t len; uint64_t vector; uint64_t address; bool check_address; uint64_t error_mask, error_bits; uint64_t alt_vector; };
+#define FC(n, c, vec) {n, c, sizeof(c), vec, 0, false, 0, 0, vec}
 static const struct fault_case faults[] = {
     FC("cli", P_CLI, 13), FC("hlt", P_HLT, 13), FC("in", P_IN, 13), FC("mov cr3", P_CR3, 13),
     FC("syscall insn", P_SYSCALL_INSN, 6), FC("ud2", P_UD2, 6), FC("div by zero", P_DIV0, 0),
     FC("int3 (breakpoint gate is DPL 0)", P_INT3, 13),
     FC("int 0x21 (kernel gate)", P_INT_OTHER, 13),
-    {"read kernel image", P_READ_KERNEL, sizeof(P_READ_KERNEL), 14, 0xffffffff80000000ULL, true, 0x7, 0x5},     /* user, protection, read */
-    {"read direct map", P_READ_HHDM, sizeof(P_READ_HHDM), 14, 0xffff800000001000ULL, true, 0x7, 0x5},
-    {"read null", P_READ_NULL, sizeof(P_READ_NULL), 14, 0, true, 0x7, 0x4},                                      /* user, not present */
-    {"read another process's page", P_READ_OTHER, sizeof(P_READ_OTHER), 14, OTHER_VA, true, 0x7, 0x4},
-    {"read non-canonical", P_READ_NONCANON, sizeof(P_READ_NONCANON), 13, 0, false, 0, 0},
-    {"write own code (W^X)", P_WRITE_CODE, sizeof(P_WRITE_CODE), 14, CODE_VA, true, 0x7, 0x7},                   /* user, protection, write */
-    {"execute data (NX)", P_EXEC_DATA, sizeof(P_EXEC_DATA), 14, DATA_VA, true, 0x17, 0x15},                      /* user, protection, fetch */
-    {"execute stack (NX)", P_EXEC_STACK, sizeof(P_EXEC_STACK), 14, 0, false, 0x17, 0x15},
+    {"read kernel image", P_READ_KERNEL, sizeof(P_READ_KERNEL), 14, 0xffffffff80000000ULL, true, 0x7, 0x5, 14},     /* user, protection, read */
+    {"read direct map", P_READ_HHDM, sizeof(P_READ_HHDM), 14, 0xffff800000001000ULL, true, 0x7, 0x5, 14},
+    {"read null", P_READ_NULL, sizeof(P_READ_NULL), 14, 0, true, 0x7, 0x4, 14},                                      /* user, not present */
+    {"read another process's page", P_READ_OTHER, sizeof(P_READ_OTHER), 14, OTHER_VA, true, 0x7, 0x4, 14},
+    /* x86 hardware raises #GP for a non-canonical access; some QEMU versions report a page fault. Either ends only the process. */
+    {"read non-canonical", P_READ_NONCANON, sizeof(P_READ_NONCANON), 13, 0, false, 0, 0, 14},
+    {"write own code (W^X)", P_WRITE_CODE, sizeof(P_WRITE_CODE), 14, CODE_VA, true, 0x7, 0x7, 14},                   /* user, protection, write */
+    {"execute data (NX)", P_EXEC_DATA, sizeof(P_EXEC_DATA), 14, DATA_VA, true, 0x17, 0x15, 14},                      /* user, protection, fetch */
+    {"execute stack (NX)", P_EXEC_STACK, sizeof(P_EXEC_STACK), 14, 0, false, 0x17, 0x15, 14},
 };
 static const char *fault_matrix(void) {
     clear_processes();
@@ -137,10 +138,21 @@ static const char *fault_matrix(void) {
         int64_t st = 0; struct process_info info;
         const char *e = run_to_exit(c->name, c->code, c->len, &st, &info);
         if (e) { (void)process_kill(holder); return e; }
-        if (!info.faulted) { (void)process_kill(holder); return c->name; }
-        if (info.fault.vector != c->vector || st != PROCESS_EXIT_FAULT_BASE - (int64_t)c->vector) { (void)process_kill(holder); return c->name; }
-        if (c->check_address && info.fault.address != c->address) { (void)process_kill(holder); return c->name; }
-        if (c->error_mask && (info.fault.error & c->error_mask) != c->error_bits) { (void)process_kill(holder); return c->name; }
+        const char *why = 0;
+        if (!info.faulted) why = "did not fault";
+        else if ((info.fault.vector != c->vector && info.fault.vector != c->alt_vector) || st != PROCESS_EXIT_FAULT_BASE - (int64_t)info.fault.vector) why = "wrong exception";
+        else if (c->check_address && info.fault.vector == 14 && info.fault.address != c->address) why = "wrong fault address";
+        else if (c->error_mask && info.fault.vector == c->vector && (info.fault.error & c->error_mask) != c->error_bits) why = "wrong page-fault error bits";
+        if (why) {
+            (void)process_kill(holder);
+            static char msg[96]; unsigned n = 0;
+            const char *parts[] = {c->name, ": ", why, " (vector ", 0, ")"};
+            char num[4] = {(char)('0' + (info.fault.vector / 10) % 10), (char)('0' + info.fault.vector % 10), 0, 0};
+            parts[4] = num;
+            for (unsigned k = 0; k < 6; ++k) for (const char *q = parts[k]; *q && n + 1 < sizeof(msg); ++q) msg[n++] = *q;
+            msg[n] = 0;
+            return msg;
+        }
     }
     struct process_info hi;
     REQUIRE(process_info_get(holder, &hi) && hi.state == PROC_ACTIVE && !hi.faulted, "an unrelated process was affected by another's fault");

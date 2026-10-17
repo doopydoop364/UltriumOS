@@ -139,7 +139,7 @@ __asm__(
 "ULTRIUM_IRQ_STUB 14\n" "ULTRIUM_IRQ_STUB 15\n"
 ".global ultrium_irq_common\n"
 "ultrium_irq_common:\n"
-"cld\n"
+"pushfq\n" "andq $-263169, (%rsp)\n" "popfq\n"             /* clear DF and AC: ring 3 can set both */
 "pushq %rax\n" "pushq %rbx\n" "pushq %rcx\n" "pushq %rdx\n"
 "pushq %rbp\n" "pushq %rsi\n" "pushq %rdi\n"
 "pushq %r8\n" "pushq %r9\n" "pushq %r10\n" "pushq %r11\n"
