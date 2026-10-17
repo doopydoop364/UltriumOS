@@ -23,7 +23,7 @@ def main():
         vm = U.VM()
         try:
             vm.run_test("ultrium test storage", 7)
-            vm.run_test("ultrium test all", 140)
+            vm.run_test("ultrium test all", 146)
             vm.line("ultrium test storage disk run")
             vm.wait_for(r"FAIL virtio disk identity and capacity: no scratch virtio disk attached", 20)
         finally:
@@ -37,7 +37,7 @@ def main():
     try:
         vm.run_test("ultrium test storage disk run", 4)
         vm.run_test("ultrium test storage disk run", 4)  # repeat in the same boot
-        vm.run_test("ultrium test all", 140)
+        vm.run_test("ultrium test all", 146)
     finally:
         vm.close()
     after = sha(img)

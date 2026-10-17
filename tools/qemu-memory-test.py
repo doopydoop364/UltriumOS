@@ -23,7 +23,8 @@ def main():
         "ultrium test memory": 14,
         "ultrium test interrupts": 2,
         "ultrium test filesystem": 8,
-        "ultrium test all": 140,
+        "ultrium test all": 146,
+        "ultrium test programs": 6,
         "ultrium test elf": 6,
         "ultrium test syscalls": 4,
         "ultrium test ring3": 6,
@@ -40,7 +41,7 @@ def main():
     if not keyboard_regression and not shell_regression and command_text not in (
             "ultrium test memory", "ultrium test all", "ultrium test interrupts",
             "ultrium test filesystem", "ultrium test shell",
-            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf",
+            "ultrium test storage", "ultrium test ultriumfs", "ultrium test ufs2", "ultrium test ufs2fs", "ultrium test ufs2crash", "ultrium test tasks", "ultrium test scheduler", "ultrium test aspace", "ultrium test ring3", "ultrium test syscalls", "ultrium test elf", "ultrium test programs",
             "ultrium system memory test"):
         raise RuntimeError("unsupported test command")
     with tempfile.TemporaryDirectory(prefix="ultrium-qmp-") as temporary:
@@ -111,7 +112,7 @@ def main():
                         if chunk:
                             output.extend(chunk)
                         if re.search(rb"TEST SUMMARY passed=\d+ failed=[1-9]\d*", output):
-                            raise RuntimeError("kernel test failed:\n" + output.decode(errors="replace")[-4000:])
+                            raise RuntimeError("kernel test failed:\n" + output.decode(errors="replace")[-30000:])
                         if not chunk and process.poll() is not None:
                             break
                 if output.decode(errors="replace").count(summary) < count:
