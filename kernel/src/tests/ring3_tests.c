@@ -24,6 +24,11 @@
 static const uint8_t P_EXIT42[] = {0xb8,0,0,0,0, 0xbf,0x2a,0,0,0, 0xcd,0x80, 0xeb,0xfe};
 static const uint8_t P_STACK[] = {0x6a,0x2a, 0x5f, 0xb8,0,0,0,0, 0xcd,0x80, 0xeb,0xfe};          /* push 42; pop rdi; exit(rdi) */
 static const uint8_t P_COUNTER[] = {0x48,0xb8,0x00,0x00,0x50,0x00,0,0,0,0, 0x48,0xff,0x00, 0xeb,0xfb};   /* inc qword [0x500000] forever */
+/* Ring 3 sets DF (direction) and AC (alignment check) before entering the kernel; the stubs must clear both. */
+#define SET_DF_AC 0x9c, 0x48,0x81,0x0c,0x24,0x00,0x04,0x04,0x00, 0x9d       /* pushfq; or qword [rsp], 0x40400; popfq */
+static const uint8_t P_FLAGS_SYSCALL[] = {SET_DF_AC, 0xb8,0,0,0,0, 0xbf,0x05,0,0,0, 0xcd,0x80, 0xeb,0xfe};      /* exit(5) with DF and AC set */
+static const uint8_t P_FLAGS_FAULT[] = {SET_DF_AC, 0xfa, 0xeb,0xfe};                                          /* cli (#GP) with DF and AC set */
+static const uint8_t P_FLAGS_IRQ[] = {SET_DF_AC, 0xb8,0,0,0,0, 0xb9,0,0,0x80,0x1, 0xff,0xc9, 0x75,0xfc, 0xbf,0x09,0,0,0, 0xcd,0x80, 0xeb,0xfe};  /* spin ~25M iterations with DF/AC set, then exit(9) */
 static const uint8_t P_CLI[] = {0xfa, 0xeb,0xfe};
 static const uint8_t P_HLT[] = {0xf4, 0xeb,0xfe};
 static const uint8_t P_IN[] = {0xe4,0x60, 0xeb,0xfe};
@@ -100,6 +105,10 @@ static const char *basic(void) {
     REQUIRE(st == 42, "ring-3 program did not exit with its status");
     e = run_to_exit("stack", P_STACK, sizeof(P_STACK), &st, NULL);
     REQUIRE(!e && st == 42, "push/pop on the user stack failed");
+    e = run_to_exit("flags", P_FLAGS_SYSCALL, sizeof(P_FLAGS_SYSCALL), &st, NULL);
+    REQUIRE(!e && st == 5, "a system call with DF and AC set by ring 3 failed");
+    e = run_to_exit("flagsirq", P_FLAGS_IRQ, sizeof(P_FLAGS_IRQ), &st, NULL);
+    REQUIRE(!e && st == 9, "timer interrupts with DF and AC set by ring 3 failed");
     e = run_to_exit("badsys", P_BADSYS, sizeof(P_BADSYS), &st, NULL);
     REQUIRE(!e, e);
     REQUIRE(st == -38, "an unknown system call did not return -38 and let the program continue");
@@ -111,7 +120,7 @@ static const char *basic(void) {
 struct fault_case { const char *name; const uint8_t *code; size_t len; uint64_t vector; uint64_t address; bool check_address; uint64_t error_mask, error_bits; uint64_t alt_vector; };
 #define FC(n, c, vec) {n, c, sizeof(c), vec, 0, false, 0, 0, vec}
 static const struct fault_case faults[] = {
-    FC("cli", P_CLI, 13), FC("hlt", P_HLT, 13), FC("in", P_IN, 13), FC("mov cr3", P_CR3, 13),
+    FC("cli with DF and AC set", P_FLAGS_FAULT, 13), FC("cli", P_CLI, 13), FC("hlt", P_HLT, 13), FC("in", P_IN, 13), FC("mov cr3", P_CR3, 13),
     FC("syscall insn", P_SYSCALL_INSN, 6), FC("ud2", P_UD2, 6), FC("div by zero", P_DIV0, 0),
     FC("int3 (breakpoint gate is DPL 0)", P_INT3, 13),
     FC("int 0x21 (kernel gate)", P_INT_OTHER, 13),
