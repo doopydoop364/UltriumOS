@@ -863,13 +863,20 @@ static const char *filesystem_capacity(void) {
         if (result == VFS_NO_SPACE) break;
         FS_REQUIRE(result == VFS_OK, "capacity copy returned unexpected error");
     }
-    /* The installed native programs (/bin) hold their own data blocks and nodes; the limits are otherwise exact. */
-    unsigned program_blocks = 0, program_nodes = 1;
+    /* The installed native programs (/bin) hold their own nodes and data capacity; the limits are otherwise exact.
+       RAMFS rounds a file's capacity up to a power of two (minimum 64, maximum VFS_FILE_MAX), so the space they
+       use depends on their exact sizes: compute it the same way instead of assuming whole blocks. */
+    size_t program_capacity = 0;
+    unsigned program_nodes = 1;
     for (unsigned i = 0; i < programs_count(); ++i) {
         const uint8_t *image; size_t size;
-        if (programs_image(i, &image, &size)) { program_blocks += (unsigned)((size + VFS_FILE_MAX - 1) / VFS_FILE_MAX); ++program_nodes; }
+        if (!programs_image(i, &image, &size)) continue;
+        size_t cap = 64;
+        while (cap < size && cap < VFS_FILE_MAX) cap *= 2;
+        program_capacity += cap;
+        ++program_nodes;
     }
-    FS_REQUIRE(copies == VFS_DATA_MAX / VFS_FILE_MAX - 1 - program_blocks, "data capacity not enforced");
+    FS_REQUIRE(copies == (VFS_DATA_MAX - program_capacity - VFS_FILE_MAX) / VFS_FILE_MAX, "data capacity not enforced");
     FS_REQUIRE(vfs_remove_tree("/fs-limits", &report) == VFS_OK &&
         vfs_create_directory("/fs-limits") == VFS_OK, "capacity reset failed");
     unsigned nodes = 0;
